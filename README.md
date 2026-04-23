@@ -87,4 +87,4 @@ What they do:
 
 ## License
 
-BSD-style license. See `LICENSE`.
+Apache License 2.0. See `LICENSE`.
