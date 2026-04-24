@@ -43,6 +43,34 @@ make docker-build
 make docker-run
 ```
 
+### Export OpenAPI docs
+
+Generate OpenAPI files directly from the app contract (no server startup required):
+
+```bash
+go run . openapi
+```
+
+This writes:
+
+- `docs/openapi/openapi.json`
+- `docs/openapi/openapi.yaml`
+
+You can also generate each format separately:
+
+```bash
+go run . openapi --format=json
+go run . openapi --format=yaml
+```
+
+Or use Make targets:
+
+```bash
+make openapi
+make openapi-json
+make openapi-yaml
+```
+
 By default:
 
 - Image name: `hello-go`

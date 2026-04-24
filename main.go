@@ -1,8 +1,173 @@
 // Copyright 2024 The MinURL Authors
 package main
 
-import "fmt"
+import (
+	"context"
+	"flag"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"os/signal"
+	"path/filepath"
+	"syscall"
+	"time"
+
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/min0625/minurl/internal/handler"
+	"github.com/min0625/minurl/internal/service"
+)
+
+const (
+	openAPIDirPerm  os.FileMode = 0o750
+	openAPIFilePerm os.FileMode = 0o600
+)
 
 func main() {
-	fmt.Println("Hello, World!")
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "openapi":
+			if err := runOpenAPICommand(os.Args[2:]); err != nil {
+				fmt.Fprintf(os.Stderr, "openapi command failed: %v\n", err)
+				os.Exit(1)
+			}
+
+			return
+		}
+	}
+
+	if err := runServer(); err != nil {
+		fmt.Fprintf(os.Stderr, "server error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func buildAPI() huma.API {
+	mux := http.NewServeMux()
+	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+
+	svc := service.NewShortURLService()
+	handler.Register(api, svc)
+
+	return api
+}
+
+func runServer() error {
+	mux := http.NewServeMux()
+	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+
+	svc := service.NewShortURLService()
+	handler.Register(api, svc)
+
+	addr := ":8888"
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           mux,
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	listenErrCh := make(chan error, 1)
+
+	go func() {
+		fmt.Printf("Server listening on %s\n", addr)
+		fmt.Printf("API docs: http://localhost%s/docs\n", addr)
+
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			listenErrCh <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+	case err := <-listenErrCh:
+		return fmt.Errorf("listen and serve: %w", err)
+	}
+
+	fmt.Println("Shutting down...")
+
+	if err := server.Shutdown(context.Background()); err != nil {
+		return fmt.Errorf("shutdown server: %w", err)
+	}
+
+	return nil
+}
+
+func runOpenAPICommand(args []string) error {
+	fs := flag.NewFlagSet("openapi", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+
+	var (
+		outDir string
+		format string
+	)
+
+	fs.StringVar(&outDir, "out", "docs/openapi", "output directory for OpenAPI files")
+	fs.StringVar(&format, "format", "all", "output format: all|json|yaml")
+
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	api := buildAPI()
+
+	spec := api.OpenAPI()
+
+	if err := os.MkdirAll(outDir, openAPIDirPerm); err != nil {
+		return fmt.Errorf("create output directory %q: %w", outDir, err)
+	}
+
+	switch format {
+	case "all":
+		if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
+			return err
+		}
+
+		if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
+			return err
+		}
+	case "json":
+		if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
+			return err
+		}
+	case "yaml":
+		if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("unsupported format %q (expected all|json|yaml)", format)
+	}
+
+	fmt.Printf("OpenAPI files generated in %s\n", outDir)
+
+	return nil
+}
+
+func writeOpenAPIJSON(spec *huma.OpenAPI, path string) error {
+	b, err := spec.MarshalJSON()
+	if err != nil {
+		return fmt.Errorf("marshal OpenAPI JSON: %w", err)
+	}
+
+	if err := os.WriteFile(path, b, openAPIFilePerm); err != nil {
+		return fmt.Errorf("write OpenAPI JSON to %q: %w", path, err)
+	}
+
+	return nil
+}
+
+func writeOpenAPIYAML(spec *huma.OpenAPI, path string) error {
+	b, err := spec.YAML()
+	if err != nil {
+		return fmt.Errorf("marshal OpenAPI YAML: %w", err)
+	}
+
+	if err := os.WriteFile(path, b, openAPIFilePerm); err != nil {
+		return fmt.Errorf("write OpenAPI YAML to %q: %w", path, err)
+	}
+
+	return nil
 }
