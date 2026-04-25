@@ -104,21 +104,10 @@ This writes:
 - `docs/openapi/openapi.json`
 - `docs/openapi/openapi.yaml`
 
-You can also generate each format separately:
-
-```bash
-go run ./cmd/minurl openapi --format=json
-go run ./cmd/minurl openapi --format=yaml
-```
-
-`--format` accepts only `all`, `json`, or `yaml` and returns a friendly error for invalid values.
-
 Or use Make targets:
 
 ```bash
 make openapi
-make openapi-json
-make openapi-yaml
 ```
 
 By default:
@@ -143,7 +132,15 @@ What they do:
 - `fix`: tidy modules and apply linter auto-fixes
 - `lint`: run `golangci-lint`
 - `test`: run race-enabled Go tests
-- `check`: run tidy diff, lint, and tests
+- `check`: run tidy diff, lint, tests, and OpenAPI source consistency check
+
+If `check` reports OpenAPI docs are out of date, run:
+
+```bash
+make openapi
+```
+
+then commit updates under `docs/openapi/`.
 
 ## Repository Structure
 

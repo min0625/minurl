@@ -13,7 +13,7 @@ func TestRunOpenAPICommandAllFormats(t *testing.T) {
 
 	outDir := t.TempDir()
 
-	msg, err := runOpenAPICommand(outDir, openAPIFormatAll)
+	msg, err := runOpenAPICommand(outDir)
 	if err != nil {
 		t.Fatalf("runOpenAPICommand returned error: %v", err)
 	}
@@ -31,33 +31,6 @@ func TestRunOpenAPICommandAllFormats(t *testing.T) {
 	}
 }
 
-func TestRunOpenAPICommandJSONOnly(t *testing.T) {
-	t.Parallel()
-
-	outDir := t.TempDir()
-
-	if _, err := runOpenAPICommand(outDir, openAPIFormatJSON); err != nil {
-		t.Fatalf("runOpenAPICommand returned error: %v", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(outDir, "openapi.json")); err != nil {
-		t.Fatalf("openapi.json should be generated: %v", err)
-	}
-
-	if _, err := os.Stat(filepath.Join(outDir, "openapi.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("openapi.yaml should not be generated for json format")
-	}
-}
-
-func TestRunOpenAPICommandInvalidFormat(t *testing.T) {
-	t.Parallel()
-
-	_, err := runOpenAPICommand(t.TempDir(), openAPIFormat("xml"))
-	if err == nil {
-		t.Fatal("expected error for unsupported format")
-	}
-}
-
 func TestExecuteOpenAPICommand(t *testing.T) {
 	t.Parallel()
 
@@ -67,7 +40,7 @@ func TestExecuteOpenAPICommand(t *testing.T) {
 	var out bytes.Buffer
 
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"openapi", "--format", "yaml", "--out", outDir})
+	cmd.SetArgs([]string{"openapi", "--out", outDir})
 
 	err := cmd.Execute()
 	if err != nil {
@@ -82,8 +55,8 @@ func TestExecuteOpenAPICommand(t *testing.T) {
 		t.Fatalf("openapi.yaml should be generated: %v", err)
 	}
 
-	if _, err := os.Stat(filepath.Join(outDir, "openapi.json")); !os.IsNotExist(err) {
-		t.Fatalf("openapi.json should not be generated for yaml format")
+	if _, err := os.Stat(filepath.Join(outDir, "openapi.json")); err != nil {
+		t.Fatalf("openapi.json should be generated: %v", err)
 	}
 }
 
@@ -117,19 +90,6 @@ func TestExecuteWithConfigDirectoryReturnsFriendlyError(t *testing.T) {
 
 	if !strings.Contains(err.Error(), "expected a file, got directory") {
 		t.Fatalf("unexpected config error: %v", err)
-	}
-}
-
-func TestExecuteOpenAPIInvalidFormatReturnsFriendlyError(t *testing.T) {
-	t.Parallel()
-
-	err := execute([]string{"openapi", "--format", "xml"})
-	if err == nil {
-		t.Fatal("expected error for invalid --format")
-	}
-
-	if !strings.Contains(err.Error(), "must be one of: all, json, yaml") {
-		t.Fatalf("unexpected openapi format error: %v", err)
 	}
 }
 
