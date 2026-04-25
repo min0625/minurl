@@ -10,7 +10,7 @@
 
 ### Create short URL
 # @name createShortURL
-POST {{baseUrl}}/short-urls HTTP/1.1
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
 content-type: application/json
 
 {
@@ -19,7 +19,7 @@ content-type: application/json
 
 ### Get short URL by ID (from create response)
 # If create request has not been executed yet, run the create request first.
-GET {{baseUrl}}/short-urls/{{createShortURL.response.body.$.id}} HTTP/1.1
+GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}} HTTP/1.1
 
 ### Not found example (expected HTTP 404)
-GET {{baseUrl}}/short-urls/NOT_FOUND_EXAMPLE HTTP/1.1
+GET {{baseUrl}}/api/v1/urls/NOT_FOUND_EXAMPLE HTTP/1.1

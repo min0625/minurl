@@ -31,7 +31,7 @@ func Register(api huma.API, svc *service.ShortURLService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "create-short-url",
 		Method:      http.MethodPost,
-		Path:        "/short-urls",
+		Path:        "/api/v1/urls",
 		Summary:     "Create a short URL",
 		Tags:        []string{"ShortURL"},
 	}, func(ctx context.Context, input *createShortURLInput) (*shortURLOutput, error) {
@@ -46,7 +46,7 @@ func Register(api huma.API, svc *service.ShortURLService) {
 	huma.Register(api, huma.Operation{
 		OperationID: "get-short-url",
 		Method:      http.MethodGet,
-		Path:        "/short-urls/{id}",
+		Path:        "/api/v1/urls/{id}",
 		Summary:     "Get a short URL by ID",
 		Tags:        []string{"ShortURL"},
 	}, func(ctx context.Context, input *getShortURLInput) (*shortURLOutput, error) {
