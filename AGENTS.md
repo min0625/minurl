@@ -5,7 +5,7 @@ Guidance for coding agents working in this repository.
 ## Purpose
 
 This repository is a Go project intended to become a short URL service.
-Current runtime code is minimal (`main.go` prints `Hello, World!`).
+Current runtime provides a Cobra-based CLI entrypoint and HTTP server startup via `cmd/minurl/main.go`.
 
 ## Core Rules
 

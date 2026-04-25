@@ -4,10 +4,12 @@ A short URL service project implemented in Go.
 
 ## Project Status
 
-Current implementation is a minimal bootstrap app:
+Current implementation provides a CLI + server foundation:
 
-- Entry point: `main.go`
-- Current behavior: prints `Hello, World!`
+- Entry point: `cmd/minurl/main.go`
+- Runtime behavior:
+	- Runs HTTP API server by default
+	- Provides CLI subcommands like `openapi` and `version`
 - Container build target binary: `minurl`
 
 This repository is prepared as the foundation for building a full short URL system.
@@ -128,7 +130,13 @@ What they do:
 
 ```text
 .
-|-- main.go
+|-- cmd/
+|   `-- minurl/
+|       `-- main.go
+|-- internal/
+|   |-- handler/
+|   |-- service/
+|   `-- model/
 |-- go.mod
 |-- Dockerfile
 |-- Makefile

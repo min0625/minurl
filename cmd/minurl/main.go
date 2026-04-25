@@ -121,9 +121,15 @@ func newOpenAPICommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "openapi",
 		Short: "Generate OpenAPI specification files",
-		RunE: func(_ *cobra.Command, _ []string) error {
-			if err := runOpenAPICommand(outDir, format); err != nil {
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			msg, err := runOpenAPICommand(outDir, format)
+			if err != nil {
 				return fmt.Errorf("openapi command failed: %w", err)
+			}
+
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), msg)
+			if err != nil {
+				return fmt.Errorf("write openapi command output: %w", err)
 			}
 
 			return nil
@@ -226,39 +232,37 @@ func runServer() error {
 	return nil
 }
 
-func runOpenAPICommand(outDir string, format openAPIFormat) error {
+func runOpenAPICommand(outDir string, format openAPIFormat) (string, error) {
 	api := buildAPI()
 
 	spec := api.OpenAPI()
 
 	if err := os.MkdirAll(outDir, openAPIDirPerm); err != nil {
-		return fmt.Errorf("create output directory %q: %w", outDir, err)
+		return "", fmt.Errorf("create output directory %q: %w", outDir, err)
 	}
 
 	switch format {
 	case openAPIFormatAll:
 		if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
-			return err
+			return "", err
 		}
 
 		if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
-			return err
+			return "", err
 		}
 	case openAPIFormatJSON:
 		if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
-			return err
+			return "", err
 		}
 	case openAPIFormatYAML:
 		if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
-			return err
+			return "", err
 		}
 	default:
-		return fmt.Errorf("unsupported format %q (expected all|json|yaml)", format)
+		return "", fmt.Errorf("unsupported format %q (expected all|json|yaml)", format)
 	}
 
-	fmt.Printf("OpenAPI files generated in %s\n", outDir)
-
-	return nil
+	return fmt.Sprintf("OpenAPI files generated in %s", outDir), nil
 }
 
 func writeOpenAPIJSON(spec *huma.OpenAPI, path string) error {

@@ -13,8 +13,13 @@ func TestRunOpenAPICommandAllFormats(t *testing.T) {
 
 	outDir := t.TempDir()
 
-	if err := runOpenAPICommand(outDir, openAPIFormatAll); err != nil {
+	msg, err := runOpenAPICommand(outDir, openAPIFormatAll)
+	if err != nil {
 		t.Fatalf("runOpenAPICommand returned error: %v", err)
+	}
+
+	if !strings.Contains(msg, "OpenAPI files generated in") {
+		t.Fatalf("unexpected openapi message: %q", msg)
 	}
 
 	if _, err := os.Stat(filepath.Join(outDir, "openapi.json")); err != nil {
@@ -31,7 +36,7 @@ func TestRunOpenAPICommandJSONOnly(t *testing.T) {
 
 	outDir := t.TempDir()
 
-	if err := runOpenAPICommand(outDir, openAPIFormatJSON); err != nil {
+	if _, err := runOpenAPICommand(outDir, openAPIFormatJSON); err != nil {
 		t.Fatalf("runOpenAPICommand returned error: %v", err)
 	}
 
@@ -47,7 +52,7 @@ func TestRunOpenAPICommandJSONOnly(t *testing.T) {
 func TestRunOpenAPICommandInvalidFormat(t *testing.T) {
 	t.Parallel()
 
-	err := runOpenAPICommand(t.TempDir(), openAPIFormat("xml"))
+	_, err := runOpenAPICommand(t.TempDir(), openAPIFormat("xml"))
 	if err == nil {
 		t.Fatal("expected error for unsupported format")
 	}
@@ -57,10 +62,20 @@ func TestExecuteOpenAPICommand(t *testing.T) {
 	t.Parallel()
 
 	outDir := t.TempDir()
+	cmd := newRootCommand()
 
-	err := execute([]string{"openapi", "--format", "yaml", "--out", outDir})
+	var out bytes.Buffer
+
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"openapi", "--format", "yaml", "--out", outDir})
+
+	err := cmd.Execute()
 	if err != nil {
 		t.Fatalf("execute returned error: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "OpenAPI files generated in") {
+		t.Fatalf("expected openapi command output, got: %q", out.String())
 	}
 
 	if _, err := os.Stat(filepath.Join(outDir, "openapi.yaml")); err != nil {
