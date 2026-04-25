@@ -23,6 +23,18 @@ API details are maintained in OpenAPI files under `docs/openapi/`:
 Online viewer:
 [https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml](https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml)
 
+## HTTP Debug Requests
+
+Reusable REST Client examples are available at:
+
+- `docs/http/minurl.http`
+
+This file is intended for local/manual API debugging (similar to a lightweight Postman collection), and includes:
+
+- shared variables (e.g. base URL)
+- create/get request flow
+- a 404 not found example
+
 ## Tech Stack
 
 - Language: Go 1.26.2
