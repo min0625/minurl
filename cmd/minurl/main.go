@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -29,39 +28,6 @@ var (
 	version = "dev"
 	commit  = ""
 )
-
-type openAPIFormat string
-
-const (
-	openAPIFormatAll  openAPIFormat = "all"
-	openAPIFormatJSON openAPIFormat = "json"
-	openAPIFormatYAML openAPIFormat = "yaml"
-)
-
-func (f *openAPIFormat) String() string {
-	if f == nil {
-		return string(openAPIFormatAll)
-	}
-
-	return string(*f)
-}
-
-func (f *openAPIFormat) Set(value string) error {
-	normalized := strings.ToLower(strings.TrimSpace(value))
-
-	switch openAPIFormat(normalized) {
-	case openAPIFormatAll, openAPIFormatJSON, openAPIFormatYAML:
-		*f = openAPIFormat(normalized)
-
-		return nil
-	default:
-		return fmt.Errorf("invalid value %q for --format: must be one of: all, json, yaml", value)
-	}
-}
-
-func (*openAPIFormat) Type() string {
-	return "openapi-format"
-}
 
 type rootOptions struct {
 	configPath string
@@ -114,16 +80,13 @@ func newRootCommand() *cobra.Command {
 }
 
 func newOpenAPICommand() *cobra.Command {
-	var (
-		outDir string
-		format = openAPIFormatAll
-	)
+	var outDir string
 
 	cmd := &cobra.Command{
 		Use:   "openapi",
 		Short: "Generate OpenAPI specification files",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			msg, err := runOpenAPICommand(outDir, format)
+			msg, err := runOpenAPICommand(outDir)
 			if err != nil {
 				return fmt.Errorf("openapi command failed: %w", err)
 			}
@@ -138,7 +101,6 @@ func newOpenAPICommand() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&outDir, "out", "docs/openapi", "output directory for OpenAPI files")
-	cmd.Flags().Var(&format, "format", "output format: all|json|yaml")
 
 	return cmd
 }
@@ -233,7 +195,7 @@ func runServer() error {
 	return nil
 }
 
-func runOpenAPICommand(outDir string, format openAPIFormat) (string, error) {
+func runOpenAPICommand(outDir string) (string, error) {
 	api := buildAPI()
 
 	spec := api.OpenAPI()
@@ -242,25 +204,12 @@ func runOpenAPICommand(outDir string, format openAPIFormat) (string, error) {
 		return "", fmt.Errorf("create output directory %q: %w", outDir, err)
 	}
 
-	switch format {
-	case openAPIFormatAll:
-		if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
-			return "", err
-		}
+	if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
+		return "", err
+	}
 
-		if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
-			return "", err
-		}
-	case openAPIFormatJSON:
-		if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
-			return "", err
-		}
-	case openAPIFormatYAML:
-		if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
-			return "", err
-		}
-	default:
-		return "", fmt.Errorf("unsupported format %q (expected all|json|yaml)", format)
+	if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
+		return "", err
 	}
 
 	return fmt.Sprintf("OpenAPI files generated in %s", outDir), nil
