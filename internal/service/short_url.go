@@ -11,7 +11,7 @@ import (
 	"github.com/min0625/minurl/internal/model"
 )
 
-// ShortURLService manages short URL resources using mock in-memory storage.
+// ShortURLService manages short URL resources using pluggable storage and counters.
 type ShortURLService struct {
 	store   ShortURLStorage
 	counter ShortURLCounter
@@ -53,7 +53,7 @@ func (s *ShortURLService) Create(ctx context.Context, originalURL string) (*mode
 	for {
 		next, err := s.counter.Next(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("generate id: %w", err)
+			return nil, fmt.Errorf("next sequence: %w", err)
 		}
 
 		id := generateID(next)
@@ -77,19 +77,19 @@ func (s *ShortURLService) Create(ctx context.Context, originalURL string) (*mode
 }
 
 // Get retrieves a short URL by ID.
-func (s *ShortURLService) Get(ctx context.Context, id string) (*model.ShortURL, bool) {
+func (s *ShortURLService) Get(ctx context.Context, id string) (*model.ShortURL, bool, error) {
 	entry, ok, err := s.store.GetByID(ctx, id)
 	if err != nil {
-		return nil, false
+		return nil, false, fmt.Errorf("get short url from store: %w", err)
 	}
 
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 
 	result := entry
 
-	return &result, true
+	return &result, true, nil
 }
 
 const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"

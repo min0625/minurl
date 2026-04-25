@@ -6,7 +6,6 @@
 # 2) Execute requests top-to-bottom.
 
 @baseUrl = http://localhost:8888
-@seedShortID = 58twvV
 @sampleOriginalURL = https://github.com/min0625
 
 ### Create short URL
@@ -21,10 +20,6 @@ content-type: application/json
 ### Get short URL by ID (from create response)
 # If create request has not been executed yet, run the create request first.
 GET {{baseUrl}}/short-urls/{{createShortURL.response.body.$.id}} HTTP/1.1
-
-### Get short URL by fixed seed ID
-# Useful when you want to verify a known ID quickly.
-GET {{baseUrl}}/short-urls/{{seedShortID}} HTTP/1.1
 
 ### Not found example (expected HTTP 404)
 GET {{baseUrl}}/short-urls/NOT_FOUND_EXAMPLE HTTP/1.1

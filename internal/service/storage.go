@@ -13,7 +13,6 @@ import (
 type ShortURLStorage interface {
 	CreateIfAbsent(ctx context.Context, entry model.ShortURL) (bool, error)
 	GetByID(ctx context.Context, id string) (model.ShortURL, bool, error)
-	Upsert(ctx context.Context, entry model.ShortURL) error
 }
 
 // InMemoryShortURLStorage is the default in-process storage implementation.
@@ -55,14 +54,4 @@ func (s *InMemoryShortURLStorage) GetByID(
 	entry, ok := s.store[id]
 
 	return entry, ok, nil
-}
-
-// Upsert inserts or replaces an entry by ID.
-func (s *InMemoryShortURLStorage) Upsert(_ context.Context, entry model.ShortURL) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.store[entry.ID] = entry
-
-	return nil
 }

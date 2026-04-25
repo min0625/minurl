@@ -30,7 +30,11 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 		t.Fatal("Create() returned zero CreateTime")
 	}
 
-	got, ok := svc.Get(context.Background(), entry.ID)
+	got, ok, err := svc.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("Get(%q) error = %v", entry.ID, err)
+	}
+
 	if !ok {
 		t.Fatalf("Get(%q) returned ok = false", entry.ID)
 	}
@@ -48,7 +52,9 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 		t.Fatalf("Get(%q) id = %q, want %q", entry.ID, got.ID, entry.ID)
 	}
 
-	if _, ok := svc.Get(context.Background(), "missing"); ok {
+	if _, ok, err := svc.Get(context.Background(), "missing"); err != nil {
+		t.Fatalf("Get(missing) error = %v", err)
+	} else if ok {
 		t.Fatal("Get(missing) returned ok = true, want false")
 	}
 }
@@ -63,14 +69,22 @@ func TestShortURLServiceGetReturnsCopy(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	got, ok := svc.Get(context.Background(), entry.ID)
+	got, ok, err := svc.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("Get(%q) error = %v", entry.ID, err)
+	}
+
 	if !ok {
 		t.Fatalf("Get(%q) returned ok = false", entry.ID)
 	}
 
 	got.OriginalURL = "https://example.org/mutated"
 
-	gotAgain, ok := svc.Get(context.Background(), entry.ID)
+	gotAgain, ok, err := svc.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("Get(%q) second read error = %v", entry.ID, err)
+	}
+
 	if !ok {
 		t.Fatalf("Get(%q) second read returned ok = false", entry.ID)
 	}
@@ -146,6 +160,29 @@ func TestShortURLServiceCreateHonorsCanceledContext(t *testing.T) {
 	}
 }
 
+func TestShortURLServiceGetReturnsErrorWhenStorageFails(t *testing.T) {
+	t.Parallel()
+
+	store := &testStorage{
+		entries: make(map[string]model.ShortURL),
+		getErr:  errors.New("storage unavailable"),
+	}
+	svc := service.NewShortURLServiceWithStorage(store)
+
+	_, ok, err := svc.Get(context.Background(), "any")
+	if err == nil {
+		t.Fatal("Get() error = nil, want non-nil")
+	}
+
+	if !errors.Is(err, store.getErr) {
+		t.Fatalf("Get() error = %v, want wrapped %v", err, store.getErr)
+	}
+
+	if ok {
+		t.Fatal("Get() ok = true, want false")
+	}
+}
+
 func isBase58(id string) bool {
 	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -160,6 +197,7 @@ func isBase58(id string) bool {
 
 type testStorage struct {
 	entries map[string]model.ShortURL
+	getErr  error
 }
 
 func (s *testStorage) CreateIfAbsent(_ context.Context, entry model.ShortURL) (bool, error) {
@@ -173,13 +211,11 @@ func (s *testStorage) CreateIfAbsent(_ context.Context, entry model.ShortURL) (b
 }
 
 func (s *testStorage) GetByID(_ context.Context, id string) (model.ShortURL, bool, error) {
+	if s.getErr != nil {
+		return model.ShortURL{}, false, s.getErr
+	}
+
 	entry, ok := s.entries[id]
 
 	return entry, ok, nil
-}
-
-func (s *testStorage) Upsert(_ context.Context, entry model.ShortURL) error {
-	s.entries[entry.ID] = entry
-
-	return nil
 }

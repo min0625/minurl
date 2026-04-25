@@ -50,7 +50,11 @@ func Register(api huma.API, svc *service.ShortURLService) {
 		Summary:     "Get a short URL by ID",
 		Tags:        []string{"ShortURL"},
 	}, func(ctx context.Context, input *getShortURLInput) (*shortURLOutput, error) {
-		entry, ok := svc.Get(ctx, input.ID)
+		entry, ok, err := svc.Get(ctx, input.ID)
+		if err != nil {
+			return nil, huma.Error500InternalServerError("failed to get short URL", err)
+		}
+
 		if !ok {
 			return nil, huma.Error404NotFound("short URL not found")
 		}
