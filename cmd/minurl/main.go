@@ -13,7 +13,8 @@ import (
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
 	"github.com/min0625/minurl/internal/service"
 	"github.com/spf13/cobra"
@@ -180,8 +181,8 @@ func validateConfigPath(path string) error {
 }
 
 func buildAPI() huma.API {
-	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 
 	svc := service.NewShortURLService()
 	handler.Register(api, svc)
@@ -190,8 +191,8 @@ func buildAPI() huma.API {
 }
 
 func runServer() error {
-	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 
 	svc := service.NewShortURLService()
 	handler.Register(api, svc)
@@ -199,7 +200,7 @@ func runServer() error {
 	addr := ":8888"
 	server := &http.Server{
 		Addr:              addr,
-		Handler:           mux,
+		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 

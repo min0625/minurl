@@ -107,7 +107,7 @@ info:
   version: 0.1.0
 openapi: 3.1.0
 paths:
-  /short-urls:
+  /api/v1/urls:
     post:
       operationId: create-short-url
       requestBody:
@@ -132,7 +132,7 @@ paths:
       summary: Create a short URL
       tags:
         - ShortURL
-  /short-urls/{id}:
+  /api/v1/urls/{id}:
     get:
       operationId: get-short-url
       parameters:

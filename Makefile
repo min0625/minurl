@@ -5,8 +5,10 @@ COMMIT ?= $(shell git rev-parse --short HEAD)
 LDFLAGS ?= -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 NEW_FROM_REV ?= HEAD
 OPENAPI_DIR ?= docs/openapi
+BIN_DIR ?= bin
+OUT_BINARY ?= $(BIN_DIR)/minurl
 
-.PHONY: docker-build docker-run fix lint test check-tidy check openapi openapi-json openapi-yaml
+.PHONY: docker-build docker-run fix lint test check-tidy check openapi openapi-json openapi-yaml build
 
 docker-build:
 	docker build --build-arg LDFLAGS='$(LDFLAGS)' -t $(IMAGE):$(IMAGE_TAG) .
@@ -28,6 +30,10 @@ check-tidy:
 	go mod tidy -diff
 
 check: check-tidy lint test
+
+build:
+	@mkdir -p $(BIN_DIR)
+	go build -o $(OUT_BINARY) -ldflags '$(LDFLAGS)' ./cmd/minurl
 
 openapi: openapi-json openapi-yaml
 

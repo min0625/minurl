@@ -34,3 +34,6 @@ go.work.sum
 # Local configuration files
 *.local
 *.local.*
+
+# Build output
+bin/

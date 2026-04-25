@@ -72,8 +72,16 @@ go run -ldflags "-X github.com/min0625/minurl/cmd/minurl.version=v1.0.0 -X githu
 In CI release pipelines, you can pass tag/commit like this:
 
 ```bash
-go build -ldflags "-s -w -X github.com/min0625/minurl/cmd/minurl.version=${GIT_TAG} -X github.com/min0625/minurl/cmd/minurl.commit=${GIT_COMMIT}" -o minurl ./cmd/minurl
-./minurl version
+mkdir -p bin
+go build -ldflags "-s -w -X github.com/min0625/minurl/cmd/minurl.version=${GIT_TAG} -X github.com/min0625/minurl/cmd/minurl.commit=${GIT_COMMIT}" -o bin/minurl ./cmd/minurl
+./bin/minurl version
+```
+
+Or use the make target:
+
+```bash
+make build
+./bin/minurl version
 ```
 
 ### Build and run with Docker

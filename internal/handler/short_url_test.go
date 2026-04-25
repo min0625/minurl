@@ -33,12 +33,12 @@ func TestRegisterGeneratesShortURLSchemaWithRequiredID(t *testing.T) {
 		t.Fatalf("ShortURL required fields = %v, want to include id", schema.Required)
 	}
 
-	if api.OpenAPI().Paths["/short-urls"] == nil {
-		t.Fatal("POST /short-urls path not found")
+	if api.OpenAPI().Paths["/api/v1/urls"] == nil {
+		t.Fatal("POST /api/v1/urls path not found")
 	}
 
-	if api.OpenAPI().Paths["/short-urls/{id}"] == nil {
-		t.Fatal("GET /short-urls/{id} path not found")
+	if api.OpenAPI().Paths["/api/v1/urls/{id}"] == nil {
+		t.Fatal("GET /api/v1/urls/{id} path not found")
 	}
 }
 
@@ -55,7 +55,7 @@ func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 	req := httptest.NewRequestWithContext(
 		context.Background(),
 		http.MethodGet,
-		"/short-urls/abc123",
+		"/api/v1/urls/abc123",
 		nil,
 	)
 	resp := httptest.NewRecorder()
