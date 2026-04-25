@@ -34,8 +34,8 @@ func Register(api huma.API, svc *service.ShortURLService) {
 		Path:        "/short-urls",
 		Summary:     "Create a short URL",
 		Tags:        []string{"ShortURL"},
-	}, func(_ context.Context, input *createShortURLInput) (*shortURLOutput, error) {
-		entry, err := svc.Create(input.Body.OriginalURL)
+	}, func(ctx context.Context, input *createShortURLInput) (*shortURLOutput, error) {
+		entry, err := svc.Create(ctx, input.Body.OriginalURL)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("failed to create short URL", err)
 		}
@@ -49,8 +49,8 @@ func Register(api huma.API, svc *service.ShortURLService) {
 		Path:        "/short-urls/{id}",
 		Summary:     "Get a short URL by ID",
 		Tags:        []string{"ShortURL"},
-	}, func(_ context.Context, input *getShortURLInput) (*shortURLOutput, error) {
-		entry, ok := svc.Get(input.ID)
+	}, func(ctx context.Context, input *getShortURLInput) (*shortURLOutput, error) {
+		entry, ok := svc.Get(ctx, input.ID)
 		if !ok {
 			return nil, huma.Error404NotFound("short URL not found")
 		}
