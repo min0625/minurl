@@ -33,7 +33,34 @@ The expected short URL system capabilities include:
 ### Run directly
 
 ```bash
-go run .
+go run ./cmd/minurl
+```
+
+### CLI commands (Cobra)
+
+This project uses Cobra for command-line parsing.
+
+```bash
+go run ./cmd/minurl --help
+go run ./cmd/minurl openapi --help
+go run ./cmd/minurl version
+```
+
+Global options:
+
+- `--config`: path to a configuration file (applies to all commands)
+
+Version metadata can be injected at build time via `ldflags`:
+
+```bash
+go run -ldflags "-X github.com/min0625/minurl/cmd/minurl.version=v1.0.0 -X github.com/min0625/minurl/cmd/minurl.commit=$(git rev-parse --short HEAD)" ./cmd/minurl version
+```
+
+In CI release pipelines, you can pass tag/commit like this:
+
+```bash
+go build -ldflags "-s -w -X github.com/min0625/minurl/cmd/minurl.version=${GIT_TAG} -X github.com/min0625/minurl/cmd/minurl.commit=${GIT_COMMIT}" -o minurl ./cmd/minurl
+./minurl version
 ```
 
 ### Build and run with Docker
@@ -48,7 +75,7 @@ make docker-run
 Generate OpenAPI files directly from the app contract (no server startup required):
 
 ```bash
-go run . openapi
+go run ./cmd/minurl openapi
 ```
 
 This writes:
@@ -59,9 +86,11 @@ This writes:
 You can also generate each format separately:
 
 ```bash
-go run . openapi --format=json
-go run . openapi --format=yaml
+go run ./cmd/minurl openapi --format=json
+go run ./cmd/minurl openapi --format=yaml
 ```
+
+`--format` accepts only `all`, `json`, or `yaml` and returns a friendly error for invalid values.
 
 Or use Make targets:
 
@@ -75,6 +104,7 @@ By default:
 
 - Image name: `hello-go`
 - Tag: current git tag (if exact tag exists) or short commit SHA
+- Docker build injects metadata into binary with `LDFLAGS` in `Makefile`
 
 ## Quality and Checks
 

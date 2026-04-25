@@ -19,7 +19,7 @@ Current runtime code is minimal (`main.go` prints `Hello, World!`).
 
 - Go version: 1.26.2
 - Main module: `github.com/min0625/minurl`
-- Main entry point: `main.go`
+- Main entry point: `cmd/minurl/main.go`
 - Docker output binary: `hello-go`
 
 ## Useful Commands
@@ -35,7 +35,7 @@ Use Make targets when possible:
 
 Direct run:
 
-- `go run .`
+- `go run ./cmd/minurl`
 
 ## Coding Conventions
 
