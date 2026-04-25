@@ -5,7 +5,7 @@ Guidance for coding agents working in this repository.
 ## Purpose
 
 This repository is a Go project intended to become a short URL service.
-Current runtime code is minimal (`main.go` prints `Hello, World!`).
+Current runtime provides a Cobra-based CLI entrypoint and HTTP server startup via `cmd/minurl/main.go`.
 
 ## Core Rules
 
@@ -19,8 +19,8 @@ Current runtime code is minimal (`main.go` prints `Hello, World!`).
 
 - Go version: 1.26.2
 - Main module: `github.com/min0625/minurl`
-- Main entry point: `main.go`
-- Docker output binary: `hello-go`
+- Main entry point: `cmd/minurl/main.go`
+- Docker output binary: `minurl`
 
 ## Useful Commands
 
@@ -35,7 +35,7 @@ Use Make targets when possible:
 
 Direct run:
 
-- `go run .`
+- `go run ./cmd/minurl`
 
 ## Coding Conventions
 

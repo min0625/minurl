@@ -8,10 +8,11 @@ RUN go mod download
 
 COPY . .
 
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o hello-go .
+ARG LDFLAGS="-s -w"
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="${LDFLAGS}" -o minurl ./cmd/minurl
 
 FROM gcr.io/distroless/static-debian12
 
-COPY --from=builder /app/hello-go /hello-go
+COPY --from=builder /app/minurl /minurl
 
-ENTRYPOINT ["/hello-go"]
+ENTRYPOINT ["/minurl"]
