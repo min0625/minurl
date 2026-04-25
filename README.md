@@ -8,7 +8,7 @@ Current implementation is a minimal bootstrap app:
 
 - Entry point: `main.go`
 - Current behavior: prints `Hello, World!`
-- Container build target binary: `hello-go`
+- Container build target binary: `minurl`
 
 This repository is prepared as the foundation for building a full short URL system.
 
@@ -102,7 +102,7 @@ make openapi-yaml
 
 By default:
 
-- Image name: `hello-go`
+- Image name: `minurl`
 - Tag: current git tag (if exact tag exists) or short commit SHA
 - Docker build injects metadata into binary with `LDFLAGS` in `Makefile`
 

@@ -1,4 +1,4 @@
-IMAGE ?= hello-go
+IMAGE ?= minurl
 TAG ?= $(shell git describe --tags --exact-match 2>/dev/null || git rev-parse --short HEAD)
 COMMIT ?= $(shell git rev-parse --short HEAD)
 LDFLAGS ?= -s -w -X github.com/min0625/minurl/cmd/minurl.version=$(TAG) -X github.com/min0625/minurl/cmd/minurl.commit=$(COMMIT)
