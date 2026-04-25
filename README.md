@@ -4,25 +4,24 @@ A short URL service project implemented in Go.
 
 ## Project Status
 
-Current implementation provides a CLI + server foundation:
+Core short URL API is implemented and running:
 
 - Entry point: `cmd/minurl/main.go`
 - Runtime behavior:
-	- Runs HTTP API server by default
-	- Provides CLI subcommands like `openapi` and `version`
+	- Runs HTTP API server by default on `:8888`
+	- Provides CLI subcommands: `openapi`, `version`
+- In-memory storage (no persistence across restarts)
 - Container build target binary: `minurl`
 
-This repository is prepared as the foundation for building a full short URL system.
+## API Documentation
 
-## Planned Scope
+API details are maintained in OpenAPI files under `docs/openapi/`:
 
-The expected short URL system capabilities include:
+- `docs/openapi/openapi.yaml`
+- `docs/openapi/openapi.json`
 
-- Create a short URL from a long URL
-- Resolve a short code back to the original URL
-- Optional custom alias support
-- Basic validation and duplicate handling
-- API-first design with clear HTTP endpoints
+Online viewer:
+[https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml](https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml)
 
 ## Tech Stack
 
@@ -132,11 +131,21 @@ What they do:
 .
 |-- cmd/
 |   `-- minurl/
-|       `-- main.go
+|       |-- main.go
+|       `-- main_test.go
+|-- docs/
+|   `-- openapi/
+|       |-- openapi.json
+|       `-- openapi.yaml
 |-- internal/
-|   |-- handler/
-|   |-- service/
-|   `-- model/
+|   |-- handler/          # HTTP route handlers
+|   |   |-- short_url.go
+|   |   `-- short_url_test.go
+|   |-- service/          # Business logic
+|   |   |-- short_url.go
+|   |   `-- short_url_test.go
+|   `-- model/            # Domain types
+|       `-- short_url.go
 |-- go.mod
 |-- Dockerfile
 |-- Makefile
@@ -145,11 +154,13 @@ What they do:
 
 ## Next Suggested Milestones
 
-1. Define URL entity and storage interface.
-2. Add HTTP server and routing.
-3. Implement create and resolve endpoints.
-4. Add input validation, tests, and error handling.
-5. Add persistence (in-memory first, then database).
+1. ✅ Define URL entity and storage interface.
+2. ✅ Add HTTP server and routing.
+3. ✅ Implement create and get short URL endpoints.
+4. ✅ Add tests and error handling.
+5. Add redirect endpoint (`GET /{id}` → `302` to original URL).
+6. Add persistence (database storage to replace in-memory store).
+7. Add custom alias support.
 
 ## License
 
