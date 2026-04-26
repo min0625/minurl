@@ -15,4 +15,9 @@ FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /app/minurl /minurl
 
+ENV MINURL_STORAGE_PATH=/data/minurl.sqlite3
+
+VOLUME ["/data"]
+EXPOSE 8888
+
 ENTRYPOINT ["/minurl"]

@@ -56,6 +56,10 @@ func newRootCommand() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
+			if !requiresRuntimeConfig(cmd) {
+				return nil
+			}
+
 			if err := validateConfigPath(opts.configPath); err != nil {
 				return err
 			}
@@ -85,11 +89,23 @@ func newRootCommand() *cobra.Command {
 		"",
 		"seed for deterministic ID key derivation (uint32, decimal or 0x hex)",
 	)
+	cmd.PersistentFlags().
+		String("storage-path", "minurl.sqlite3", "file path for the SQLite database")
 
 	cmd.AddCommand(newOpenAPICommand())
 	cmd.AddCommand(newVersionCommand())
 
 	return cmd
+}
+
+func requiresRuntimeConfig(cmd *cobra.Command) bool {
+	if cmd == nil {
+		return true
+	}
+
+	name := cmd.Name()
+
+	return name != "openapi" && name != "version"
 }
 
 func newOpenAPICommand() *cobra.Command {
@@ -155,30 +171,26 @@ func validateConfigPath(path string) error {
 	return nil
 }
 
-func buildAPI(cfg appConfig) (huma.API, error) {
+func buildAPI(svc handler.ShortURLService) (*chi.Mux, huma.API) {
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
-
-	svc, err := newShortURLServiceFromConfig(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("build short url service from config: %w", err)
-	}
 
 	handler.Register(api, svc)
 
-	return api, nil
+	return r, api
 }
 
 func runServer(cfg appConfig) error {
-	r := chi.NewRouter()
-	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
-
-	svc, err := newShortURLServiceFromConfig(cfg)
+	svc, closer, err := newShortURLServiceFromConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("build short url service from config: %w", err)
 	}
 
-	handler.Register(api, svc)
+	defer func() {
+		_ = closer.Close()
+	}()
+
+	r, _ := buildAPI(svc)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -216,10 +228,7 @@ func runServer(cfg appConfig) error {
 }
 
 func runOpenAPICommand(outDir string) (string, error) {
-	api, err := buildAPI(defaultAppConfig())
-	if err != nil {
-		return "", err
-	}
+	_, api := buildAPI(nil)
 
 	spec := api.OpenAPI()
 

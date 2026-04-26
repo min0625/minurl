@@ -5,12 +5,20 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/min0625/minurl/internal/model"
-	"github.com/min0625/minurl/internal/service"
 )
+
+var errShortURLServiceUnavailable = errors.New("short url service unavailable")
+
+// ShortURLService defines the minimal behavior required by HTTP handlers.
+type ShortURLService interface {
+	Create(ctx context.Context, originalURL string) (*model.ShortURL, error)
+	Get(ctx context.Context, id string) (*model.ShortURL, bool, error)
+}
 
 type createShortURLInput struct {
 	Body struct {
@@ -27,7 +35,11 @@ type getShortURLInput struct {
 }
 
 // Register registers all short URL routes onto the given API.
-func Register(api huma.API, svc *service.ShortURLService) {
+func Register(api huma.API, svc ShortURLService) {
+	if svc == nil {
+		svc = noopShortURLService{}
+	}
+
 	huma.Register(api, huma.Operation{
 		OperationID: "create-short-url",
 		Method:      http.MethodPost,
@@ -61,4 +73,14 @@ func Register(api huma.API, svc *service.ShortURLService) {
 
 		return &shortURLOutput{Body: *entry}, nil
 	})
+}
+
+type noopShortURLService struct{}
+
+func (noopShortURLService) Create(context.Context, string) (*model.ShortURL, error) {
+	return nil, errShortURLServiceUnavailable
+}
+
+func (noopShortURLService) Get(context.Context, string) (*model.ShortURL, bool, error) {
+	return nil, false, errShortURLServiceUnavailable
 }

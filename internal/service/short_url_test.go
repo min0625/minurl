@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/min0625/minurl/internal/model"
@@ -15,7 +16,7 @@ import (
 func TestShortURLServiceCreateAndGet(t *testing.T) {
 	t.Parallel()
 
-	svc := service.NewShortURLService()
+	svc := newTestShortURLService()
 
 	entry, err := svc.Create(context.Background(), "https://example.org/path")
 	if err != nil {
@@ -62,7 +63,7 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 func TestShortURLServiceGetReturnsCopy(t *testing.T) {
 	t.Parallel()
 
-	svc := service.NewShortURLService()
+	svc := newTestShortURLService()
 
 	entry, err := svc.Create(context.Background(), "https://example.org/original")
 	if err != nil {
@@ -101,7 +102,7 @@ func TestShortURLServiceGetReturnsCopy(t *testing.T) {
 func TestShortURLServiceCreateGeneratesUniqueBase58IDs(t *testing.T) {
 	t.Parallel()
 
-	svc := service.NewShortURLService()
+	svc := newTestShortURLService()
 	seen := make(map[string]struct{}, 2000)
 
 	for i := 0; i < 2000; i++ {
@@ -130,7 +131,7 @@ func TestShortURLServiceWithCustomStorage(t *testing.T) {
 	t.Parallel()
 
 	store := &testStorage{entries: make(map[string]model.ShortURL)}
-	svc := service.NewShortURLServiceWithStorage(store)
+	svc := service.NewShortURLServiceWithAllDependencies(store, &testCounter{}, nil)
 
 	if len(store.entries) != 0 {
 		t.Fatalf("custom storage should start empty, got %d entries", len(store.entries))
@@ -149,7 +150,7 @@ func TestShortURLServiceWithCustomStorage(t *testing.T) {
 func TestShortURLServiceCreateHonorsCanceledContext(t *testing.T) {
 	t.Parallel()
 
-	svc := service.NewShortURLService()
+	svc := newTestShortURLService()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -167,7 +168,7 @@ func TestShortURLServiceGetReturnsErrorWhenStorageFails(t *testing.T) {
 		entries: make(map[string]model.ShortURL),
 		getErr:  errors.New("storage unavailable"),
 	}
-	svc := service.NewShortURLServiceWithStorage(store)
+	svc := service.NewShortURLServiceWithAllDependencies(store, &testCounter{}, nil)
 
 	_, ok, err := svc.Get(context.Background(), "any")
 	if err == nil {
@@ -189,7 +190,7 @@ func TestShortURLServiceUsesInjectedIDGenerator(t *testing.T) {
 	store := &testStorage{entries: make(map[string]model.ShortURL)}
 	idGen := &fixedIDGenerator{id: "custom-id"}
 
-	svc := service.NewShortURLServiceWithAllDependencies(store, nil, idGen)
+	svc := service.NewShortURLServiceWithAllDependencies(store, &testCounter{}, idGen)
 
 	entry, err := svc.Create(context.Background(), "https://example.org/injected")
 	if err != nil {
@@ -273,10 +274,22 @@ type fixedIDGenerator struct {
 	calls int
 }
 
+type testCounter struct {
+	value atomic.Uint32
+}
+
 func (g *fixedIDGenerator) Generate(_ uint32) string {
 	g.calls++
 
 	return g.id
+}
+
+func (c *testCounter) Next(ctx context.Context) (uint32, error) {
+	if err := ctx.Err(); err != nil {
+		return 0, err
+	}
+
+	return c.value.Add(1), nil
 }
 
 func (s *testStorage) CreateIfAbsent(_ context.Context, entry model.ShortURL) (bool, error) {
@@ -297,4 +310,10 @@ func (s *testStorage) GetByID(_ context.Context, id string) (model.ShortURL, boo
 	entry, ok := s.entries[id]
 
 	return entry, ok, nil
+}
+
+func newTestShortURLService() *service.ShortURLService {
+	store := &testStorage{entries: make(map[string]model.ShortURL)}
+
+	return service.NewShortURLServiceWithAllDependencies(store, &testCounter{}, nil)
 }

@@ -18,24 +18,6 @@ type ShortURLService struct {
 	idGen   IDGenerator
 }
 
-// NewShortURLService returns a new ShortURLService.
-func NewShortURLService() *ShortURLService {
-	return NewShortURLServiceWithStorage(NewInMemoryShortURLStorage())
-}
-
-// NewShortURLServiceWithStorage returns a new ShortURLService with a custom storage backend.
-func NewShortURLServiceWithStorage(store ShortURLStorage) *ShortURLService {
-	return NewShortURLServiceWithDependencies(store, NewInMemoryShortURLCounter())
-}
-
-// NewShortURLServiceWithDependencies returns a new ShortURLService with custom storage and counter backends.
-func NewShortURLServiceWithDependencies(
-	store ShortURLStorage,
-	counter ShortURLCounter,
-) *ShortURLService {
-	return NewShortURLServiceWithAllDependencies(store, counter, nil)
-}
-
 // NewShortURLServiceWithAllDependencies returns a new ShortURLService with custom storage,
 // counter, and ID generator backends.
 func NewShortURLServiceWithAllDependencies(
@@ -44,11 +26,11 @@ func NewShortURLServiceWithAllDependencies(
 	idGen IDGenerator,
 ) *ShortURLService {
 	if store == nil {
-		store = NewInMemoryShortURLStorage()
+		panic("short url storage must not be nil")
 	}
 
 	if counter == nil {
-		counter = NewInMemoryShortURLCounter()
+		panic("short url counter must not be nil")
 	}
 
 	if idGen == nil {

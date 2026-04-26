@@ -6,6 +6,12 @@
 # Default: ":8888"
 http-addr: ":8888"
 
+# File path for the SQLite database.
+# SQLite is the only backend for now.
+# Future backends may include MySQL / PostgreSQL / DynamoDB.
+# Default: "minurl.sqlite3"
+storage-path: "minurl.sqlite3"
+
 # Optional deterministic seed for ID generation.
 # Accepted formats:
 # - decimal: "12345"

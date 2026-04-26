@@ -83,13 +83,53 @@ func TestExecuteVersionCommand(t *testing.T) {
 func TestExecuteWithConfigDirectoryReturnsFriendlyError(t *testing.T) {
 	t.Parallel()
 
-	err := execute([]string{"--config", t.TempDir(), "version"})
+	err := execute([]string{"--config", t.TempDir()})
 	if err == nil {
 		t.Fatal("expected error for directory config path")
 	}
 
 	if !strings.Contains(err.Error(), "expected a file, got directory") {
 		t.Fatalf("unexpected config error: %v", err)
+	}
+}
+
+func TestExecuteVersionCommandSkipsConfigLoading(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+
+	var out bytes.Buffer
+
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--config", t.TempDir(), "version"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("version command should skip config loading: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "minurl version ") {
+		t.Fatalf("unexpected version output: %q", out.String())
+	}
+}
+
+func TestExecuteOpenAPICommandSkipsConfigLoading(t *testing.T) {
+	t.Parallel()
+
+	outDir := t.TempDir()
+	cmd := newRootCommand()
+
+	cmd.SetArgs([]string{"--config", t.TempDir(), "openapi", "--out", outDir})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("openapi command should skip config loading: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outDir, "openapi.yaml")); err != nil {
+		t.Fatalf("openapi.yaml should be generated: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(outDir, "openapi.json")); err != nil {
+		t.Fatalf("openapi.json should be generated: %v", err)
 	}
 }
 
