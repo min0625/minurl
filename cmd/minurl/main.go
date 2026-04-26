@@ -15,7 +15,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
-	"github.com/min0625/minurl/internal/service"
 	"github.com/spf13/cobra"
 )
 
@@ -31,6 +30,7 @@ var (
 
 type rootOptions struct {
 	configPath string
+	appConfig  appConfig
 }
 
 func main() {
@@ -55,15 +55,22 @@ func newRootCommand() *cobra.Command {
 		Short:         "MinURL service",
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
+		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			if err := validateConfigPath(opts.configPath); err != nil {
 				return err
 			}
 
+			cfg, err := loadAppConfig(cmd, opts.configPath)
+			if err != nil {
+				return err
+			}
+
+			opts.appConfig = cfg
+
 			return nil
 		},
 		RunE: func(_ *cobra.Command, _ []string) error {
-			if err := runServer(); err != nil {
+			if err := runServer(opts.appConfig); err != nil {
 				return fmt.Errorf("server error: %w", err)
 			}
 
@@ -72,6 +79,12 @@ func newRootCommand() *cobra.Command {
 	}
 
 	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "path to configuration file")
+	cmd.PersistentFlags().String("http-addr", ":8888", "HTTP listen address")
+	cmd.PersistentFlags().String(
+		"id-seed",
+		"",
+		"seed for deterministic ID key derivation (uint32, decimal or 0x hex)",
+	)
 
 	cmd.AddCommand(newOpenAPICommand())
 	cmd.AddCommand(newVersionCommand())
@@ -142,26 +155,33 @@ func validateConfigPath(path string) error {
 	return nil
 }
 
-func buildAPI() huma.API {
+func buildAPI(cfg appConfig) (huma.API, error) {
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 
-	svc := service.NewShortURLService()
+	svc, err := newShortURLServiceFromConfig(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build short url service from config: %w", err)
+	}
+
 	handler.Register(api, svc)
 
-	return api
+	return api, nil
 }
 
-func runServer() error {
+func runServer(cfg appConfig) error {
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 
-	svc := service.NewShortURLService()
+	svc, err := newShortURLServiceFromConfig(cfg)
+	if err != nil {
+		return fmt.Errorf("build short url service from config: %w", err)
+	}
+
 	handler.Register(api, svc)
 
-	addr := ":8888"
 	server := &http.Server{
-		Addr:              addr,
+		Addr:              cfg.HTTPAddr,
 		Handler:           r,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -172,8 +192,8 @@ func runServer() error {
 	listenErrCh := make(chan error, 1)
 
 	go func() {
-		fmt.Printf("Server listening on %s\n", addr)
-		fmt.Printf("API docs: http://localhost%s/docs\n", addr)
+		fmt.Printf("Server listening on %s\n", cfg.HTTPAddr)
+		fmt.Printf("API docs: http://localhost%s/docs\n", cfg.HTTPAddr)
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			listenErrCh <- err
@@ -196,7 +216,10 @@ func runServer() error {
 }
 
 func runOpenAPICommand(outDir string) (string, error) {
-	api := buildAPI()
+	api, err := buildAPI(defaultAppConfig())
+	if err != nil {
+		return "", err
+	}
 
 	spec := api.OpenAPI()
 

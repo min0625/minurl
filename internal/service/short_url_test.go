@@ -183,6 +183,74 @@ func TestShortURLServiceGetReturnsErrorWhenStorageFails(t *testing.T) {
 	}
 }
 
+func TestShortURLServiceUsesInjectedIDGenerator(t *testing.T) {
+	t.Parallel()
+
+	store := &testStorage{entries: make(map[string]model.ShortURL)}
+	idGen := &fixedIDGenerator{id: "custom-id"}
+
+	svc := service.NewShortURLServiceWithAllDependencies(store, nil, idGen)
+
+	entry, err := svc.Create(context.Background(), "https://example.org/injected")
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if entry.ID != "custom-id" {
+		t.Fatalf("Create() id = %q, want %q", entry.ID, "custom-id")
+	}
+
+	if idGen.calls != 1 {
+		t.Fatalf("ID generator calls = %d, want 1", idGen.calls)
+	}
+}
+
+func TestFeistelIDGeneratorWithSeedIsDeterministic(t *testing.T) {
+	t.Parallel()
+
+	a := service.NewFeistelIDGeneratorWithSeed(12345)
+	b := service.NewFeistelIDGeneratorWithSeed(12345)
+	c := service.NewFeistelIDGeneratorWithSeed(54321)
+
+	seq := []uint32{1, 2, 3, 1024, 65535}
+
+	for _, v := range seq {
+		if gotA, gotB := a.Generate(v), b.Generate(v); gotA != gotB {
+			t.Fatalf("same seed generated different IDs for seq %d: %q != %q", v, gotA, gotB)
+		}
+
+		if gotA, gotC := a.Generate(v), c.Generate(v); gotA == gotC {
+			t.Fatalf("different seeds generated same ID for seq %d: %q", v, gotA)
+		}
+	}
+}
+
+func TestDefaultFeistelIDGeneratorUsesDefaultSeed(t *testing.T) {
+	t.Parallel()
+
+	const expectedDefaultSeed uint32 = 0xC0FFEE42
+
+	defaultGen := service.NewDefaultFeistelIDGenerator()
+	seedGen := service.NewFeistelIDGeneratorWithSeed(expectedDefaultSeed)
+
+	seq := []uint32{1, 2, 3, 1024, 65535}
+
+	for _, v := range seq {
+		if gotDefault, gotSeed := defaultGen.Generate(
+			v,
+		), seedGen.Generate(
+			v,
+		); gotDefault != gotSeed {
+			t.Fatalf(
+				"default generator differs from default seed for seq %d: %q != %q",
+				v,
+				gotDefault,
+				gotSeed,
+			)
+		}
+	}
+}
+
 func isBase58(id string) bool {
 	const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
@@ -198,6 +266,17 @@ func isBase58(id string) bool {
 type testStorage struct {
 	entries map[string]model.ShortURL
 	getErr  error
+}
+
+type fixedIDGenerator struct {
+	id    string
+	calls int
+}
+
+func (g *fixedIDGenerator) Generate(_ uint32) string {
+	g.calls++
+
+	return g.id
 }
 
 func (s *testStorage) CreateIfAbsent(_ context.Context, entry model.ShortURL) (bool, error) {

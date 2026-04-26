@@ -62,6 +62,56 @@ go run ./cmd/minurl version
 Global options:
 
 - `--config`: path to a configuration file (applies to all commands)
+- `--http-addr`: HTTP listen address (default `:8888`)
+- `--id-seed`: deterministic seed for ID key derivation (uint32, empty means built-in default seed)
+
+Configuration precedence is:
+
+1. CLI flags
+2. Environment variables
+3. Configuration file
+4. Built-in defaults
+
+### Configuration (flag / env / file)
+
+This project uses Cobra + Viper to support unified configuration via CLI flags,
+environment variables, and config file.
+
+Environment variable names:
+
+- `MINURL_HTTP_ADDR`
+- `MINURL_ID_SEED`
+
+Example (env):
+
+```bash
+MINURL_HTTP_ADDR=:9090 MINURL_ID_SEED=12345 go run ./cmd/minurl
+```
+
+Example (flags):
+
+```bash
+go run ./cmd/minurl --http-addr :9090 --id-seed 12345
+```
+
+Create a local config from the example:
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+Then edit `config.yaml` as needed, for example:
+
+```yaml
+http-addr: ":9090"
+id-seed: "12345"
+```
+
+Then run:
+
+```bash
+go run ./cmd/minurl --config config.yaml
+```
 
 Version metadata can be injected at build time via `ldflags`:
 

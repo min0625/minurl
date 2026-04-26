@@ -11,6 +11,10 @@
             "mode": "debug",
             "program": "${workspaceFolder}/cmd/minurl",
             "cwd": "${workspaceFolder}",
+            "args": [
+                "--config",
+                "${workspaceFolder}/config.yaml"
+            ]
         }
     ]
 }

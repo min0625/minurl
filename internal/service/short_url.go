@@ -15,6 +15,7 @@ import (
 type ShortURLService struct {
 	store   ShortURLStorage
 	counter ShortURLCounter
+	idGen   IDGenerator
 }
 
 // NewShortURLService returns a new ShortURLService.
@@ -32,6 +33,16 @@ func NewShortURLServiceWithDependencies(
 	store ShortURLStorage,
 	counter ShortURLCounter,
 ) *ShortURLService {
+	return NewShortURLServiceWithAllDependencies(store, counter, nil)
+}
+
+// NewShortURLServiceWithAllDependencies returns a new ShortURLService with custom storage,
+// counter, and ID generator backends.
+func NewShortURLServiceWithAllDependencies(
+	store ShortURLStorage,
+	counter ShortURLCounter,
+	idGen IDGenerator,
+) *ShortURLService {
 	if store == nil {
 		store = NewInMemoryShortURLStorage()
 	}
@@ -40,9 +51,14 @@ func NewShortURLServiceWithDependencies(
 		counter = NewInMemoryShortURLCounter()
 	}
 
+	if idGen == nil {
+		idGen = NewDefaultFeistelIDGenerator()
+	}
+
 	s := &ShortURLService{
 		store:   store,
 		counter: counter,
+		idGen:   idGen,
 	}
 
 	return s
@@ -56,7 +72,7 @@ func (s *ShortURLService) Create(ctx context.Context, originalURL string) (*mode
 			return nil, fmt.Errorf("next sequence: %w", err)
 		}
 
-		id := generateID(next)
+		id := s.idGen.Generate(next)
 		entry := model.ShortURL{
 			ID:          id,
 			OriginalURL: originalURL,
@@ -90,56 +106,4 @@ func (s *ShortURLService) Get(ctx context.Context, id string) (*model.ShortURL, 
 	result := entry
 
 	return &result, true, nil
-}
-
-const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
-var feistelKeys = [4]uint32{0xA5A5A5A5, 0x3C6EF372, 0x9E3779B9, 0x1BF5A8D3}
-
-func generateID(sequence uint32) string {
-	permuted := feistelPermute(sequence)
-
-	return encodeBase58(permuted)
-}
-
-func feistelPermute(value uint32) uint32 {
-	left := (value >> 16) & 0xFFFF
-	right := value & 0xFFFF
-
-	for _, key := range feistelKeys {
-		nextLeft := right
-		nextRight := (left ^ feistelRound(right, key)) & 0xFFFF
-
-		left = nextLeft
-		right = nextRight
-	}
-
-	return (left << 16) | right
-}
-
-func feistelRound(half, key uint32) uint32 {
-	x := (half ^ key) * 0x45d9f3b
-	x ^= x >> 16
-
-	return x & 0xFFFF
-}
-
-func encodeBase58(value uint32) string {
-	if value == 0 {
-		return string(base58Alphabet[0])
-	}
-
-	var buffer [6]byte
-
-	index := len(buffer)
-
-	for value > 0 {
-		remainder := value % 58
-		value /= 58
-		index--
-
-		buffer[index] = base58Alphabet[int(remainder)]
-	}
-
-	return string(buffer[index:])
 }

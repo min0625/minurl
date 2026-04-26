@@ -5,10 +5,9 @@ package service
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync/atomic"
 )
-
-const maxUint32 = ^uint32(0)
 
 // ShortURLCounter describes counter operations required by ShortURLService.
 type ShortURLCounter interface {
@@ -35,7 +34,7 @@ func (c *InMemoryShortURLCounter) Next(ctx context.Context) (uint32, error) {
 		}
 
 		current := c.value.Load()
-		if current == maxUint32 {
+		if current == math.MaxUint32 {
 			return 0, fmt.Errorf("short id sequence exhausted")
 		}
 
