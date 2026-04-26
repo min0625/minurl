@@ -1,0 +1,14 @@
+# MinURL configuration example
+# Usage:
+#   go run ./cmd/minurl --config config.example.yaml
+
+# HTTP listen address.
+# Default: ":8888"
+http-addr: ":8888"
+
+# Optional deterministic seed for ID generation.
+# Accepted formats:
+# - decimal: "12345"
+# - hex: "0x3039"
+# Leave empty to use the built-in default seed.
+id-seed: ""
