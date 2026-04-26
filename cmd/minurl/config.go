@@ -4,22 +4,28 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
 	"github.com/min0625/minurl/internal/service"
+	"github.com/min0625/minurl/internal/store"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
 type appConfig struct {
-	HTTPAddr string
-	IDSeed   string
+	HTTPAddr    string
+	IDSeed      string
+	StoragePath string
 }
 
 func defaultAppConfig() appConfig {
-	return appConfig{HTTPAddr: ":8888"}
+	return appConfig{
+		HTTPAddr:    ":8888",
+		StoragePath: "minurl.sqlite3",
+	}
 }
 
 func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
@@ -31,6 +37,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	v.AutomaticEnv()
 
 	v.SetDefault("http-addr", cfg.HTTPAddr)
+	v.SetDefault("storage-path", cfg.StoragePath)
 
 	if err := bindConfigFlags(v, cmd); err != nil {
 		return appConfig{}, err
@@ -46,6 +53,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 	cfg.HTTPAddr = v.GetString("http-addr")
 	cfg.IDSeed = strings.TrimSpace(v.GetString("id-seed"))
+	cfg.StoragePath = strings.TrimSpace(v.GetString("storage-path"))
 
 	if cfg.HTTPAddr == "" {
 		return appConfig{}, fmt.Errorf("http-addr must not be empty")
@@ -57,11 +65,17 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		}
 	}
 
+	if cfg.StoragePath == "" {
+		return appConfig{}, fmt.Errorf(
+			"storage-path must not be empty",
+		)
+	}
+
 	return cfg, nil
 }
 
 func bindConfigFlags(v *viper.Viper, cmd *cobra.Command) error {
-	for _, key := range []string{"http-addr", "id-seed"} {
+	for _, key := range []string{"http-addr", "id-seed", "storage-path"} {
 		f := lookupFlag(cmd, key)
 		if f == nil {
 			return fmt.Errorf("lookup flag %q: not found", key)
@@ -72,7 +86,7 @@ func bindConfigFlags(v *viper.Viper, cmd *cobra.Command) error {
 		}
 	}
 
-	for _, key := range []string{"http-addr", "id-seed"} {
+	for _, key := range []string{"http-addr", "id-seed", "storage-path"} {
 		if err := v.BindEnv(key); err != nil {
 			return fmt.Errorf("bind env %q: %w", key, err)
 		}
@@ -97,13 +111,13 @@ func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
 	return nil
 }
 
-func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, error) {
+func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.Closer, error) {
 	var idGen service.IDGenerator
 
 	if cfg.IDSeed != "" {
 		seed, err := parseUint32(cfg.IDSeed)
 		if err != nil {
-			return nil, fmt.Errorf("parse id-seed: %w", err)
+			return nil, nil, fmt.Errorf("parse id-seed: %w", err)
 		}
 
 		idGen = service.NewFeistelIDGeneratorWithSeed(seed)
@@ -111,7 +125,24 @@ func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, erro
 		idGen = service.NewDefaultFeistelIDGenerator()
 	}
 
-	return service.NewShortURLServiceWithAllDependencies(nil, nil, idGen), nil
+	var storage service.ShortURLStorage
+
+	var counter service.ShortURLCounter
+
+	var closer io.Closer
+
+	sqliteStore, sqliteCounter, sqliteCloser, err := store.NewSQLiteBackends(cfg.StoragePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open sqlite backends: %w", err)
+	}
+
+	storage = sqliteStore
+	counter = sqliteCounter
+	closer = sqliteCloser
+
+	svc := service.NewShortURLServiceWithAllDependencies(storage, counter, idGen)
+
+	return svc, closer, nil
 }
 
 func parseUint32(raw string) (uint32, error) {

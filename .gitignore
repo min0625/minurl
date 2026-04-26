@@ -38,3 +38,8 @@ config.yaml
 
 # Build output
 bin/
+
+# SQLite database file
+*.db
+*.sqlite
+*.sqlite3

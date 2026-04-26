@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -22,7 +23,7 @@ func TestRegisterGeneratesShortURLSchemaWithRequiredID(t *testing.T) {
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
 
-	handler.Register(api, service.NewShortURLService())
+	handler.Register(api, newHandlerTestService(&handlerTestStorage{}))
 
 	schema := api.OpenAPI().Components.Schemas.Map()["ShortURL"]
 	if schema == nil {
@@ -47,10 +48,35 @@ func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
-	svc := service.NewShortURLServiceWithStorage(&handlerTestStorage{
+	svc := newHandlerTestService(&handlerTestStorage{
 		getErr: errors.New("storage unavailable"),
 	})
 	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/abc123",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestRegisterWithNilServiceIsSafe(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	handler.Register(api, nil)
+
+	if api.OpenAPI().Paths["/api/v1/urls"] == nil {
+		t.Fatal("POST /api/v1/urls path not found")
+	}
 
 	req := httptest.NewRequestWithContext(
 		context.Background(),
@@ -70,6 +96,10 @@ type handlerTestStorage struct {
 	getErr error
 }
 
+type handlerTestCounter struct {
+	value atomic.Uint32
+}
+
 func (s *handlerTestStorage) CreateIfAbsent(
 	_ context.Context,
 	_ model.ShortURL,
@@ -86,6 +116,14 @@ func (s *handlerTestStorage) GetByID(
 	}
 
 	return model.ShortURL{}, false, nil
+}
+
+func (c *handlerTestCounter) Next(_ context.Context) (uint32, error) {
+	return c.value.Add(1), nil
+}
+
+func newHandlerTestService(store service.ShortURLStorage) *service.ShortURLService {
+	return service.NewShortURLServiceWithAllDependencies(store, &handlerTestCounter{}, nil)
 }
 
 func contains(values []string, want string) bool {

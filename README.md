@@ -10,7 +10,8 @@ Core short URL API is implemented and running:
 - Runtime behavior:
 	- Runs HTTP API server by default on `:8888`
 	- Provides CLI subcommands: `openapi`, `version`
-- In-memory storage (no persistence across restarts)
+- Storage backend is SQLite only for now
+- In SQLite mode, both short URL records and `id counter` are persisted
 - Container build target binary: `minurl`
 
 ## API Documentation
@@ -64,6 +65,7 @@ Global options:
 - `--config`: path to a configuration file (applies to all commands)
 - `--http-addr`: HTTP listen address (default `:8888`)
 - `--id-seed`: deterministic seed for ID key derivation (uint32, empty means built-in default seed)
+- `--storage-path`: SQLite database file path (default `minurl.sqlite3`)
 
 Configuration precedence is:
 
@@ -81,17 +83,18 @@ Environment variable names:
 
 - `MINURL_HTTP_ADDR`
 - `MINURL_ID_SEED`
+- `MINURL_STORAGE_PATH`
 
 Example (env):
 
 ```bash
-MINURL_HTTP_ADDR=:9090 MINURL_ID_SEED=12345 go run ./cmd/minurl
+MINURL_HTTP_ADDR=:9090 MINURL_ID_SEED=12345 MINURL_STORAGE_PATH=minurl.sqlite3 go run ./cmd/minurl
 ```
 
 Example (flags):
 
 ```bash
-go run ./cmd/minurl --http-addr :9090 --id-seed 12345
+go run ./cmd/minurl --http-addr :9090 --id-seed 12345 --storage-path ./data/minurl.sqlite3
 ```
 
 Create a local config from the example:
@@ -104,6 +107,7 @@ Then edit `config.yaml` as needed, for example:
 
 ```yaml
 http-addr: ":9090"
+storage-path: "./data/minurl.sqlite3"
 id-seed: "12345"
 ```
 
@@ -139,6 +143,24 @@ make build
 ```bash
 make docker-build
 make docker-run
+```
+
+`make docker-run` uses persistent volume defaults:
+
+- port mapping: `8888:8888`
+- volume mapping: `minurl-data:/data`
+- SQLite path in container: `/data/minurl.sqlite3`
+
+You can override volume mapping:
+
+```bash
+make docker-run DOCKER_VOLUME=/absolute/host/path:/data
+```
+
+You can also override port mapping:
+
+```bash
+make docker-run DOCKER_PORT=9090:8888
 ```
 
 ### Export OpenAPI docs
@@ -226,8 +248,8 @@ then commit updates under `docs/openapi/`.
 3. ✅ Implement create and get short URL endpoints.
 4. ✅ Add tests and error handling.
 5. Add redirect endpoint (`GET /{id}` → `302` to original URL).
-6. Add persistence (database storage to replace in-memory store).
-7. Add custom alias support.
+6. Add custom alias support.
+7. Add pluggable database backends (MySQL / PostgreSQL / DynamoDB).
 
 ## License
 
