@@ -64,6 +64,22 @@ type getShortURLInput struct {
 
 var _ huma.Resolver = (*getShortURLInput)(nil)
 
+var createShortURLOperation = huma.Operation{
+	OperationID: "create-short-url",
+	Method:      http.MethodPost,
+	Path:        "/api/v1/urls",
+	Summary:     "Create a short URL",
+	Tags:        []string{"ShortURL"},
+}
+
+var getShortURLOperation = huma.Operation{
+	OperationID: "get-short-url",
+	Method:      http.MethodGet,
+	Path:        "/api/v1/urls/{id}",
+	Summary:     "Get a short URL by ID",
+	Tags:        []string{"ShortURL"},
+}
+
 func (in *getShortURLInput) Resolve(huma.Context) []error {
 	return validateRequest(in, "invalid get short URL request")
 }
@@ -71,47 +87,43 @@ func (in *getShortURLInput) Resolve(huma.Context) []error {
 // registerCreateShortURLRoute registers the create short URL endpoint on the given API.
 // The handler implements the full business logic using the provided service.
 func registerCreateShortURLRoute(api huma.API, svc ShortURLService) {
-	huma.Register(api, huma.Operation{
-		OperationID: "create-short-url",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/urls",
-		Summary:     "Create a short URL",
-		Tags:        []string{"ShortURL"},
-	}, func(ctx context.Context, input *createShortURLInput) (*shortURLOutput, error) {
-		entry, err := svc.Create(ctx, input.Body)
-		if err != nil {
-			if errors.Is(err, service.ErrShortURLIDConflict) {
-				return nil, huma.Error409Conflict("short URL ID already exists", err)
+	huma.Register(
+		api,
+		createShortURLOperation,
+		func(ctx context.Context, input *createShortURLInput) (*shortURLOutput, error) {
+			entry, err := svc.Create(ctx, input.Body)
+			if err != nil {
+				if errors.Is(err, service.ErrShortURLIDConflict) {
+					return nil, huma.Error409Conflict("short URL ID already exists", err)
+				}
+
+				return nil, huma.Error500InternalServerError("failed to create short URL", err)
 			}
 
-			return nil, huma.Error500InternalServerError("failed to create short URL", err)
-		}
-
-		return &shortURLOutput{Body: *entry}, nil
-	})
+			return &shortURLOutput{Body: *entry}, nil
+		},
+	)
 }
 
 // registerGetShortURLRoute registers the get short URL endpoint on the given API.
 // The handler implements the full business logic using the provided service.
 func registerGetShortURLRoute(api huma.API, svc ShortURLService) {
-	huma.Register(api, huma.Operation{
-		OperationID: "get-short-url",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/urls/{id}",
-		Summary:     "Get a short URL by ID",
-		Tags:        []string{"ShortURL"},
-	}, func(ctx context.Context, input *getShortURLInput) (*shortURLOutput, error) {
-		entry, ok, err := svc.Get(ctx, input.ID)
-		if err != nil {
-			return nil, huma.Error500InternalServerError("failed to get short URL", err)
-		}
+	huma.Register(
+		api,
+		getShortURLOperation,
+		func(ctx context.Context, input *getShortURLInput) (*shortURLOutput, error) {
+			entry, ok, err := svc.Get(ctx, input.ID)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("failed to get short URL", err)
+			}
 
-		if !ok {
-			return nil, huma.Error404NotFound("short URL not found")
-		}
+			if !ok {
+				return nil, huma.Error404NotFound("short URL not found")
+			}
 
-		return &shortURLOutput{Body: *entry}, nil
-	})
+			return &shortURLOutput{Body: *entry}, nil
+		},
+	)
 }
 
 // Register registers all short URL routes onto the given API with the provided service.
@@ -123,23 +135,19 @@ func Register(api huma.API, svc ShortURLService) {
 // RegisterOpenAPI registers all short URL routes onto the given API for OpenAPI schema generation.
 // This variant does not require a service implementation and is suitable for documentation generation.
 func RegisterOpenAPI(api huma.API) {
-	huma.Register(api, huma.Operation{
-		OperationID: "create-short-url",
-		Method:      http.MethodPost,
-		Path:        "/api/v1/urls",
-		Summary:     "Create a short URL",
-		Tags:        []string{"ShortURL"},
-	}, func(_ context.Context, _ *createShortURLInput) (*shortURLOutput, error) {
-		return nil, huma.Error500InternalServerError("not implemented", nil)
-	})
+	huma.Register(
+		api,
+		createShortURLOperation,
+		func(_ context.Context, _ *createShortURLInput) (*shortURLOutput, error) {
+			return nil, huma.Error500InternalServerError("not implemented", nil)
+		},
+	)
 
-	huma.Register(api, huma.Operation{
-		OperationID: "get-short-url",
-		Method:      http.MethodGet,
-		Path:        "/api/v1/urls/{id}",
-		Summary:     "Get a short URL by ID",
-		Tags:        []string{"ShortURL"},
-	}, func(_ context.Context, _ *getShortURLInput) (*shortURLOutput, error) {
-		return nil, huma.Error500InternalServerError("not implemented", nil)
-	})
+	huma.Register(
+		api,
+		getShortURLOperation,
+		func(_ context.Context, _ *getShortURLInput) (*shortURLOutput, error) {
+			return nil, huma.Error500InternalServerError("not implemented", nil)
+		},
+	)
 }

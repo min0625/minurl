@@ -29,7 +29,11 @@ func (s *Storage) WithGetError(err error) *Storage {
 }
 
 // CreateIfAbsent creates an entry if the ID is not already present.
-func (s *Storage) CreateIfAbsent(_ context.Context, entry model.ShortURL) (bool, error) {
+func (s *Storage) CreateIfAbsent(ctx context.Context, entry model.ShortURL) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+
 	if _, exists := s.entries[entry.ID]; exists {
 		return false, nil
 	}
@@ -40,9 +44,13 @@ func (s *Storage) CreateIfAbsent(_ context.Context, entry model.ShortURL) (bool,
 }
 
 // GetByID retrieves an entry by ID. Returns the configured error if set.
-func (s *Storage) GetByID(_ context.Context, id string) (model.ShortURL, bool, error) {
+func (s *Storage) GetByID(ctx context.Context, id string) (model.ShortURL, bool, error) {
 	if s.getErr != nil {
 		return model.ShortURL{}, false, s.getErr
+	}
+
+	if err := ctx.Err(); err != nil {
+		return model.ShortURL{}, false, err
 	}
 
 	entry, ok := s.entries[id]
