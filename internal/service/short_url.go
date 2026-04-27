@@ -5,7 +5,9 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/min0625/minurl/internal/model"
@@ -17,6 +19,9 @@ type ShortURLService struct {
 	counter ShortURLCounter
 	idGen   IDGenerator
 }
+
+// ErrShortURLIDConflict is returned when a provided short URL ID already exists.
+var ErrShortURLIDConflict = errors.New("short url id already exists")
 
 // NewShortURLServiceWithAllDependencies returns a new ShortURLService with custom storage,
 // counter, and ID generator backends.
@@ -47,7 +52,28 @@ func NewShortURLServiceWithAllDependencies(
 }
 
 // Create creates a new short URL and returns it.
-func (s *ShortURLService) Create(ctx context.Context, originalURL string) (*model.ShortURL, error) {
+// If entry.ID is provided, it will be used as the short URL identifier.
+func (s *ShortURLService) Create(
+	ctx context.Context,
+	entry model.ShortURL,
+) (*model.ShortURL, error) {
+	if entry.ID != "" {
+		entry.CreateTime = time.Now().UTC()
+
+		created, err := s.store.CreateIfAbsent(ctx, entry)
+		if err != nil {
+			return nil, fmt.Errorf("create short url in store: %w", err)
+		}
+
+		if !created {
+			return nil, ErrShortURLIDConflict
+		}
+
+		result := entry
+
+		return &result, nil
+	}
+
 	for {
 		next, err := s.counter.Next(ctx)
 		if err != nil {
@@ -55,11 +81,8 @@ func (s *ShortURLService) Create(ctx context.Context, originalURL string) (*mode
 		}
 
 		id := s.idGen.Generate(next)
-		entry := model.ShortURL{
-			ID:          id,
-			OriginalURL: originalURL,
-			CreateTime:  time.Now().UTC(),
-		}
+		entry.ID = id
+		entry.CreateTime = time.Now().UTC()
 
 		created, err := s.store.CreateIfAbsent(ctx, entry)
 		if err != nil {
@@ -72,6 +95,29 @@ func (s *ShortURLService) Create(ctx context.Context, originalURL string) (*mode
 			return &result, nil
 		}
 	}
+}
+
+func validateShortURLID(id string) error {
+	if id == "" {
+		return errors.New("id is required")
+	}
+
+	if len(id) > 10 {
+		return errors.New("id is too long")
+	}
+
+	for _, ch := range id {
+		if !strings.ContainsRune(base58Alphabet, ch) {
+			return errors.New("id contains invalid characters")
+		}
+	}
+
+	return nil
+}
+
+// IsValidShortURLID returns nil when id conforms to allowed short URL identifier rules, otherwise returns an error.
+func IsValidShortURLID(id string) error {
+	return validateShortURLID(id)
 }
 
 // Get retrieves a short URL by ID.

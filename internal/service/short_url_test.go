@@ -18,7 +18,10 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 
 	svc := newTestShortURLService()
 
-	entry, err := svc.Create(context.Background(), "https://example.org/path")
+	entry, err := svc.Create(
+		context.Background(),
+		model.ShortURL{OriginalURL: "https://example.org/path"},
+	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -60,12 +63,50 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 	}
 }
 
+func TestShortURLServiceCreateWithCustomID(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestShortURLService()
+
+	entry, err := svc.Create(
+		context.Background(),
+		model.ShortURL{ID: "custom123", OriginalURL: "https://example.org/custom"},
+	)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	if entry.ID != "custom123" {
+		t.Fatalf("Create() id = %q, want %q", entry.ID, "custom123")
+	}
+
+	if entry.OriginalURL != "https://example.org/custom" {
+		t.Fatalf(
+			"Create() original_url = %q, want %q",
+			entry.OriginalURL,
+			"https://example.org/custom",
+		)
+	}
+
+	if _, err := svc.Create(
+		context.Background(),
+		model.ShortURL{ID: "custom123", OriginalURL: "https://example.org/duplicate"},
+	); err == nil {
+		t.Fatal("Create() error = nil, want ErrShortURLIDConflict")
+	} else if !errors.Is(err, service.ErrShortURLIDConflict) {
+		t.Fatalf("Create() error = %v, want %v", err, service.ErrShortURLIDConflict)
+	}
+}
+
 func TestShortURLServiceGetReturnsCopy(t *testing.T) {
 	t.Parallel()
 
 	svc := newTestShortURLService()
 
-	entry, err := svc.Create(context.Background(), "https://example.org/original")
+	entry, err := svc.Create(
+		context.Background(),
+		model.ShortURL{OriginalURL: "https://example.org/original"},
+	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -106,7 +147,10 @@ func TestShortURLServiceCreateGeneratesUniqueBase58IDs(t *testing.T) {
 	seen := make(map[string]struct{}, 2000)
 
 	for i := 0; i < 2000; i++ {
-		entry, err := svc.Create(context.Background(), "https://example.org/batch")
+		entry, err := svc.Create(
+			context.Background(),
+			model.ShortURL{OriginalURL: "https://example.org/batch"},
+		)
 		if err != nil {
 			t.Fatalf("Create() error at iteration %d: %v", i, err)
 		}
@@ -127,6 +171,35 @@ func TestShortURLServiceCreateGeneratesUniqueBase58IDs(t *testing.T) {
 	}
 }
 
+func TestIsValidShortURLID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		id      string
+		wantErr bool
+	}{
+		{"valid base58", "123456789A", false},
+		{"empty", "", true},
+		{"leading space", " abc", true},
+		{"invalid character", "abcd!", true},
+		{"disallowed base58 char 0", "0", true},
+		{"disallowed base58 char O", "O", true},
+		{"disallowed base58 char I", "I", true},
+		{"disallowed base58 char l", "l", true},
+		{"too long", "123456789AB", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := service.IsValidShortURLID(tt.id)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("IsValidShortURLID(%q) error = %v, wantErr %v", tt.id, err, tt.wantErr)
+			}
+		})
+	}
+}
+
 func TestShortURLServiceWithCustomStorage(t *testing.T) {
 	t.Parallel()
 
@@ -137,7 +210,10 @@ func TestShortURLServiceWithCustomStorage(t *testing.T) {
 		t.Fatalf("custom storage should start empty, got %d entries", len(store.entries))
 	}
 
-	entry, err := svc.Create(context.Background(), "https://example.org/custom-store")
+	entry, err := svc.Create(
+		context.Background(),
+		model.ShortURL{OriginalURL: "https://example.org/custom-store"},
+	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -154,7 +230,10 @@ func TestShortURLServiceCreateHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	if _, err := svc.Create(ctx, "https://example.org/canceled"); err == nil {
+	if _, err := svc.Create(
+		ctx,
+		model.ShortURL{OriginalURL: "https://example.org/canceled"},
+	); err == nil {
 		t.Fatal("Create() error = nil, want context canceled error")
 	} else if !errors.Is(err, context.Canceled) {
 		t.Fatalf("Create() error = %v, want context canceled", err)
@@ -192,7 +271,10 @@ func TestShortURLServiceUsesInjectedIDGenerator(t *testing.T) {
 
 	svc := service.NewShortURLServiceWithAllDependencies(store, &testCounter{}, idGen)
 
-	entry, err := svc.Create(context.Background(), "https://example.org/injected")
+	entry, err := svc.Create(
+		context.Background(),
+		model.ShortURL{OriginalURL: "https://example.org/injected"},
+	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}

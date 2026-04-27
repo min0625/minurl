@@ -17,6 +17,16 @@ content-type: application/json
   "original_url": "{{sampleOriginalURL}}"
 }
 
+### Create short URL with optional custom ID
+# @name createShortURLWithCustomID
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
+content-type: application/json
+
+{
+  "original_url": "{{sampleOriginalURL}}",
+  "id": "Min"
+}
+
 ### Get short URL by ID (from create response)
 # If create request has not been executed yet, run the create request first.
 GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}} HTTP/1.1
