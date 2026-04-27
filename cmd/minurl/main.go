@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,9 +34,13 @@ type rootOptions struct {
 	appConfig  appConfig
 }
 
+func init() {
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{})))
+}
+
 func main() {
 	if err := execute(os.Args[1:]); err != nil {
-		fmt.Fprintf(os.Stderr, "%v\n", err)
+		slog.Error("execution failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -91,7 +96,13 @@ func newRootCommand() *cobra.Command {
 	)
 	cmd.PersistentFlags().
 		String("storage-path", "minurl.sqlite3", "file path for the SQLite database")
-
+	cmd.PersistentFlags().String("log-format", "text", "log output format: text or json")
+	cmd.PersistentFlags().Bool("otel-enabled", false, "enable OpenTelemetry tracing")
+	cmd.PersistentFlags().String("otel-service-name", "minurl", "OpenTelemetry service name")
+	cmd.PersistentFlags().
+		String("otel-exporter", "stdout", "OpenTelemetry exporter: stdout or otlp")
+	cmd.PersistentFlags().String("otel-endpoint", "", "OTLP collector endpoint")
+	cmd.PersistentFlags().Bool("otel-insecure", true, "allow insecure OTLP connection")
 	cmd.AddCommand(newOpenAPICommand())
 	cmd.AddCommand(newVersionCommand())
 
@@ -173,6 +184,9 @@ func validateConfigPath(path string) error {
 
 func buildAPI(svc handler.ShortURLService) (*chi.Mux, huma.API) {
 	r := chi.NewRouter()
+	r.Use(panicRecoveryMiddleware)
+	r.Use(requestLoggerMiddleware)
+	r.Use(accessLogMiddleware)
 	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 
 	handler.Register(api, svc)
@@ -181,6 +195,25 @@ func buildAPI(svc handler.ShortURLService) (*chi.Mux, huma.API) {
 }
 
 func runServer(cfg appConfig) error {
+	configureDefaultLogger(cfg.LogFormat)
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	shutdown, err := initOpenTelemetry(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("initialize opentelemetry: %w", err)
+	}
+
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if shutdownErr := shutdown(shutdownCtx); shutdownErr != nil {
+			slog.ErrorContext(shutdownCtx, "shutdown opentelemetry", "error", shutdownErr)
+		}
+	}()
+
 	svc, closer, err := newShortURLServiceFromConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("build short url service from config: %w", err)
@@ -192,20 +225,19 @@ func runServer(cfg appConfig) error {
 
 	r, _ := buildAPI(svc)
 
+	h := wrapHTTPHandlerWithTelemetry(r, cfg)
+
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
-		Handler:           r,
+		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	listenErrCh := make(chan error, 1)
 
 	go func() {
-		fmt.Printf("Server listening on %s\n", cfg.HTTPAddr)
-		fmt.Printf("API docs: http://localhost%s/docs\n", cfg.HTTPAddr)
+		slog.With("addr", cfg.HTTPAddr, "docs_url", "http://localhost"+cfg.HTTPAddr+"/docs").
+			InfoContext(ctx, "server listening")
 
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			listenErrCh <- err
@@ -218,9 +250,12 @@ func runServer(cfg appConfig) error {
 		return fmt.Errorf("listen and serve: %w", err)
 	}
 
-	fmt.Println("Shutting down...")
+	slog.InfoContext(ctx, "shutting down")
 
-	if err := server.Shutdown(context.Background()); err != nil {
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("shutdown server: %w", err)
 	}
 

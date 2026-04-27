@@ -42,7 +42,7 @@ type ShortURLService interface {
 }
 
 type createShortURLInput struct {
-	Body model.ShortURL
+	Body model.ShortURL `validate:"required"`
 }
 
 var _ huma.Resolver = (*createShortURLInput)(nil)
