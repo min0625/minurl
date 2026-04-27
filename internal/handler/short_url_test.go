@@ -8,14 +8,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/min0625/minurl/internal/handler"
-	"github.com/min0625/minurl/internal/model"
 	"github.com/min0625/minurl/internal/service"
+	"github.com/min0625/minurl/internal/testhelpers"
 )
 
 func TestRegisterGeneratesShortURLSchemaWithRequiredOriginalURL(t *testing.T) {
@@ -24,7 +23,7 @@ func TestRegisterGeneratesShortURLSchemaWithRequiredOriginalURL(t *testing.T) {
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
 
-	handler.Register(api, newHandlerTestService(&handlerTestStorage{}))
+	handler.Register(api, newHandlerTestService(t, testhelpers.NewStorage()))
 
 	schema := api.OpenAPI().Components.Schemas.Map()["ShortURL"]
 	if schema == nil {
@@ -49,9 +48,8 @@ func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
-	svc := newHandlerTestService(&handlerTestStorage{
-		getErr: errors.New("storage unavailable"),
-	})
+	store := testhelpers.NewStorage().WithGetError(errors.New("storage unavailable"))
+	svc := newHandlerTestService(t, store)
 	handler.Register(api, svc)
 
 	req := httptest.NewRequestWithContext(
@@ -73,7 +71,7 @@ func TestRegisterCreateShortURLValidatesRequestBody(t *testing.T) {
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
-	handler.Register(api, newHandlerTestService(&handlerTestStorage{}))
+	handler.Register(api, newHandlerTestService(t, testhelpers.NewStorage()))
 
 	req := httptest.NewRequestWithContext(
 		context.Background(),
@@ -96,7 +94,7 @@ func TestRegisterGetShortURLValidatesRequestPath(t *testing.T) {
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
-	handler.Register(api, newHandlerTestService(&handlerTestStorage{}))
+	handler.Register(api, newHandlerTestService(t, testhelpers.NewStorage()))
 
 	req := httptest.NewRequestWithContext(
 		context.Background(),
@@ -113,46 +111,17 @@ func TestRegisterGetShortURLValidatesRequestPath(t *testing.T) {
 	}
 }
 
-type handlerTestStorage struct {
-	getErr error
-}
+func newHandlerTestService(t *testing.T, store service.ShortURLStorage) *service.ShortURLService {
+	t.Helper()
 
-type handlerTestCounter struct {
-	value atomic.Uint32
-}
-
-func (s *handlerTestStorage) CreateIfAbsent(
-	_ context.Context,
-	_ model.ShortURL,
-) (bool, error) {
-	return true, nil
-}
-
-func (s *handlerTestStorage) GetByID(
-	_ context.Context,
-	_ string,
-) (model.ShortURL, bool, error) {
-	if s.getErr != nil {
-		return model.ShortURL{}, false, s.getErr
+	svc, err := service.NewShortURLServiceWithAllDependencies(store, testhelpers.NewCounter(), nil)
+	if err != nil {
+		t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
 	}
 
-	return model.ShortURL{}, false, nil
-}
-
-func (c *handlerTestCounter) Next(_ context.Context) (uint32, error) {
-	return c.value.Add(1), nil
-}
-
-func newHandlerTestService(store service.ShortURLStorage) *service.ShortURLService {
-	return service.NewShortURLServiceWithAllDependencies(store, &handlerTestCounter{}, nil)
+	return svc
 }
 
 func contains(values []string, want string) bool {
-	for _, value := range values {
-		if value == want {
-			return true
-		}
-	}
-
-	return false
+	return testhelpers.StringSliceContains(values, want)
 }

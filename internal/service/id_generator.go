@@ -2,7 +2,27 @@
 
 package service
 
-const defaultFeistelSeed uint32 = 0xC0FFEE42
+const (
+	// defaultFeistelSeed is the default seed for deterministic ID generation.
+	// Using a memorable hex value (0xC0FFEE = "COFFEE") for clarity in debugging.
+	defaultFeistelSeed uint32 = 0xC0FFEE42
+
+	// splitMix32Increment is the increment for SplitMix32-style key derivation.
+	// This is the "golden ratio" constant: 2^32 / phi.
+	splitMix32Increment uint32 = 0x9E3779B9
+
+	// feistelHalfMask is the bitmask for 16-bit half-blocks in Feistel rounds.
+	feistelHalfMask uint32 = 0xFFFF
+
+	// feistelRoundMul is the multiplier used in Feistel round function for diffusion.
+	feistelRoundMul uint32 = 0x45d9f3b
+
+	// base58Alphabet is the standard Base58 alphabet used by Bitcoin, without 0, O, I, l to avoid confusion.
+	base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+
+	// base58RadixSize is the size of the Base58 alphabet.
+	base58RadixSize = 58
+)
 
 // IDGenerator describes short ID generation operations required by ShortURLService.
 type IDGenerator interface {
@@ -35,12 +55,12 @@ func (g *FeistelIDGenerator) Generate(sequence uint32) string {
 
 func deriveFeistelKeys(seed uint32) [4]uint32 {
 	// SplitMix32-style progression provides deterministic, well-dispersed key material.
-	x := seed + 0x9E3779B9
+	x := seed + splitMix32Increment
 
 	var keys [4]uint32
 
 	for i := range keys {
-		x += 0x9E3779B9
+		x += splitMix32Increment
 		z := x
 		z ^= z >> 16
 		z *= 0x85ebca6b
@@ -55,12 +75,12 @@ func deriveFeistelKeys(seed uint32) [4]uint32 {
 }
 
 func feistelPermute(value uint32, keys [4]uint32) uint32 {
-	left := (value >> 16) & 0xFFFF
-	right := value & 0xFFFF
+	left := (value >> 16) & feistelHalfMask
+	right := value & feistelHalfMask
 
 	for _, key := range keys {
 		nextLeft := right
-		nextRight := (left ^ feistelRound(right, key)) & 0xFFFF
+		nextRight := (left ^ feistelRound(right, key)) & feistelHalfMask
 
 		left = nextLeft
 		right = nextRight
@@ -70,13 +90,11 @@ func feistelPermute(value uint32, keys [4]uint32) uint32 {
 }
 
 func feistelRound(half, key uint32) uint32 {
-	x := (half ^ key) * 0x45d9f3b
+	x := (half ^ key) * feistelRoundMul
 	x ^= x >> 16
 
-	return x & 0xFFFF
+	return x & feistelHalfMask
 }
-
-const base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 func encodeBase58(value uint32) string {
 	if value == 0 {
@@ -88,8 +106,8 @@ func encodeBase58(value uint32) string {
 	index := len(buffer)
 
 	for value > 0 {
-		remainder := value % 58
-		value /= 58
+		remainder := value % base58RadixSize
+		value /= base58RadixSize
 		index--
 
 		buffer[index] = base58Alphabet[int(remainder)]

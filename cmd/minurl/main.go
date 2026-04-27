@@ -2,31 +2,11 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
-	"os/signal"
-	"path/filepath"
-	"syscall"
-	"time"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
-	"github.com/go-chi/chi/v5"
-	"github.com/min0625/minurl/internal/handler"
 	"github.com/spf13/cobra"
-)
-
-const (
-	openAPIDirPerm  os.FileMode = 0o750
-	openAPIFilePerm os.FileMode = 0o600
-)
-
-var (
-	version = "dev"
-	commit  = ""
 )
 
 type rootOptions struct {
@@ -119,52 +99,6 @@ func requiresRuntimeConfig(cmd *cobra.Command) bool {
 	return name != "openapi" && name != "version"
 }
 
-func newOpenAPICommand() *cobra.Command {
-	var outDir string
-
-	cmd := &cobra.Command{
-		Use:   "openapi",
-		Short: "Generate OpenAPI specification files",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			msg, err := runOpenAPICommand(outDir)
-			if err != nil {
-				return fmt.Errorf("openapi command failed: %w", err)
-			}
-
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), msg)
-			if err != nil {
-				return fmt.Errorf("write openapi command output: %w", err)
-			}
-
-			return nil
-		},
-	}
-
-	cmd.Flags().StringVar(&outDir, "out", "docs/openapi", "output directory for OpenAPI files")
-
-	return cmd
-}
-
-func newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the minurl CLI version",
-		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "minurl version %s\n", buildVersion())
-
-			return err
-		},
-	}
-}
-
-func buildVersion() string {
-	if commit == "" {
-		return version
-	}
-
-	return fmt.Sprintf("%s (%s)", version, commit)
-}
-
 func validateConfigPath(path string) error {
 	if path == "" {
 		return nil
@@ -177,132 +111,6 @@ func validateConfigPath(path string) error {
 
 	if info.IsDir() {
 		return fmt.Errorf("invalid --config path %q: expected a file, got directory", path)
-	}
-
-	return nil
-}
-
-func buildAPI(svc handler.ShortURLService) (*chi.Mux, huma.API) {
-	r := chi.NewRouter()
-	r.Use(panicRecoveryMiddleware)
-	r.Use(requestLoggerMiddleware)
-	r.Use(accessLogMiddleware)
-	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
-
-	handler.Register(api, svc)
-
-	return r, api
-}
-
-func runServer(cfg appConfig) error {
-	configureDefaultLogger(cfg.LogFormat)
-
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	shutdown, err := initOpenTelemetry(ctx, cfg)
-	if err != nil {
-		return fmt.Errorf("initialize opentelemetry: %w", err)
-	}
-
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		if shutdownErr := shutdown(shutdownCtx); shutdownErr != nil {
-			slog.ErrorContext(shutdownCtx, "shutdown opentelemetry", "error", shutdownErr)
-		}
-	}()
-
-	svc, closer, err := newShortURLServiceFromConfig(cfg)
-	if err != nil {
-		return fmt.Errorf("build short url service from config: %w", err)
-	}
-
-	defer func() {
-		_ = closer.Close()
-	}()
-
-	r, _ := buildAPI(svc)
-
-	h := wrapHTTPHandlerWithTelemetry(r, cfg)
-
-	server := &http.Server{
-		Addr:              cfg.HTTPAddr,
-		Handler:           h,
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
-	listenErrCh := make(chan error, 1)
-
-	go func() {
-		slog.With("addr", cfg.HTTPAddr, "docs_url", "http://localhost"+cfg.HTTPAddr+"/docs").
-			InfoContext(ctx, "server listening")
-
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			listenErrCh <- err
-		}
-	}()
-
-	select {
-	case <-ctx.Done():
-	case err := <-listenErrCh:
-		return fmt.Errorf("listen and serve: %w", err)
-	}
-
-	slog.InfoContext(ctx, "shutting down")
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("shutdown server: %w", err)
-	}
-
-	return nil
-}
-
-func runOpenAPICommand(outDir string) (string, error) {
-	_, api := buildAPI(nil)
-
-	spec := api.OpenAPI()
-
-	if err := os.MkdirAll(outDir, openAPIDirPerm); err != nil {
-		return "", fmt.Errorf("create output directory %q: %w", outDir, err)
-	}
-
-	if err := writeOpenAPIJSON(spec, filepath.Join(outDir, "openapi.json")); err != nil {
-		return "", err
-	}
-
-	if err := writeOpenAPIYAML(spec, filepath.Join(outDir, "openapi.yaml")); err != nil {
-		return "", err
-	}
-
-	return fmt.Sprintf("OpenAPI files generated in %s", outDir), nil
-}
-
-func writeOpenAPIJSON(spec *huma.OpenAPI, path string) error {
-	b, err := spec.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("marshal OpenAPI JSON: %w", err)
-	}
-
-	if err := os.WriteFile(path, b, openAPIFilePerm); err != nil {
-		return fmt.Errorf("write OpenAPI JSON to %q: %w", path, err)
-	}
-
-	return nil
-}
-
-func writeOpenAPIYAML(spec *huma.OpenAPI, path string) error {
-	b, err := spec.YAML()
-	if err != nil {
-		return fmt.Errorf("marshal OpenAPI YAML: %w", err)
-	}
-
-	if err := os.WriteFile(path, b, openAPIFilePerm); err != nil {
-		return fmt.Errorf("write OpenAPI YAML to %q: %w", path, err)
 	}
 
 	return nil

@@ -4,14 +4,10 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"strconv"
 	"strings"
 
-	"github.com/min0625/minurl/internal/service"
-	"github.com/min0625/minurl/internal/store"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
 )
 
@@ -21,6 +17,19 @@ const (
 	otelExporterStdout = "stdout"
 	otelExporterOTLP   = "otlp"
 )
+
+// configKeys lists all configuration keys that should be bound from flags and environment variables.
+var configKeys = []string{
+	"http-addr",
+	"id-seed",
+	"storage-path",
+	"log-format",
+	"otel.enabled",
+	"otel.service-name",
+	"otel.exporter",
+	"otel.endpoint",
+	"otel.insecure",
+}
 
 type appConfig struct {
 	HTTPAddr        string
@@ -139,106 +148,6 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	}
 
 	return cfg, nil
-}
-
-func bindConfigFlags(v *viper.Viper, cmd *cobra.Command) error {
-	for _, key := range []string{"http-addr", "id-seed", "storage-path", "log-format", "otel.enabled", "otel.service-name", "otel.exporter", "otel.endpoint", "otel.insecure"} {
-		flagName := strings.ReplaceAll(key, ".", "-")
-
-		f := lookupFlag(cmd, flagName)
-		if f == nil {
-			return fmt.Errorf("lookup flag %q: not found", flagName)
-		}
-
-		if err := v.BindPFlag(key, f); err != nil {
-			return fmt.Errorf("bind flag %q: %w", key, err)
-		}
-	}
-
-	for _, key := range []string{"http-addr", "id-seed", "storage-path", "log-format", "otel.enabled", "otel.service-name", "otel.exporter", "otel.endpoint", "otel.insecure"} {
-		if err := v.BindEnv(key); err != nil {
-			return fmt.Errorf("bind env %q: %w", key, err)
-		}
-	}
-
-	return nil
-}
-
-func applyHyphenatedOTelConfigKeys(v *viper.Viper, cmd *cobra.Command) {
-	if flag := lookupFlag(cmd, "otel-enabled"); flag != nil &&
-		!flag.Changed && v.IsSet("otel-enabled") {
-		v.Set("otel.enabled", v.Get("otel-enabled"))
-	}
-
-	if flag := lookupFlag(cmd, "otel-service-name"); flag != nil &&
-		!flag.Changed && v.IsSet("otel-service-name") {
-		v.Set("otel.service-name", v.Get("otel-service-name"))
-	}
-
-	if flag := lookupFlag(cmd, "otel-exporter"); flag != nil &&
-		!flag.Changed && v.IsSet("otel-exporter") {
-		v.Set("otel.exporter", v.Get("otel-exporter"))
-	}
-
-	if flag := lookupFlag(cmd, "otel-endpoint"); flag != nil &&
-		!flag.Changed && v.IsSet("otel-endpoint") {
-		v.Set("otel.endpoint", v.Get("otel-endpoint"))
-	}
-
-	if flag := lookupFlag(cmd, "otel-insecure"); flag != nil &&
-		!flag.Changed && v.IsSet("otel-insecure") {
-		v.Set("otel.insecure", v.Get("otel-insecure"))
-	}
-}
-
-func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
-	if f := cmd.Flags().Lookup(name); f != nil {
-		return f
-	}
-
-	if f := cmd.PersistentFlags().Lookup(name); f != nil {
-		return f
-	}
-
-	if f := cmd.InheritedFlags().Lookup(name); f != nil {
-		return f
-	}
-
-	return nil
-}
-
-func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.Closer, error) {
-	var idGen service.IDGenerator
-
-	if cfg.IDSeed != "" {
-		seed, err := parseUint32(cfg.IDSeed)
-		if err != nil {
-			return nil, nil, fmt.Errorf("parse id-seed: %w", err)
-		}
-
-		idGen = service.NewFeistelIDGeneratorWithSeed(seed)
-	} else {
-		idGen = service.NewDefaultFeistelIDGenerator()
-	}
-
-	var storage service.ShortURLStorage
-
-	var counter service.ShortURLCounter
-
-	var closer io.Closer
-
-	sqliteStore, sqliteCounter, sqliteCloser, err := store.NewSQLiteBackends(cfg.StoragePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("open sqlite backends: %w", err)
-	}
-
-	storage = sqliteStore
-	counter = sqliteCounter
-	closer = sqliteCloser
-
-	svc := service.NewShortURLServiceWithAllDependencies(storage, counter, idGen)
-
-	return svc, closer, nil
 }
 
 func parseUint32(raw string) (uint32, error) {

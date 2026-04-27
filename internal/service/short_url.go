@@ -13,6 +13,12 @@ import (
 	"github.com/min0625/minurl/internal/model"
 )
 
+const (
+	// maxShortURLIDLen is the maximum allowed length for short URL identifiers.
+	// This limits the short ID to 10 characters in Base58 encoding.
+	maxShortURLIDLen = 10
+)
+
 // ShortURLService manages short URL resources using pluggable storage and counters.
 type ShortURLService struct {
 	store   ShortURLStorage
@@ -29,13 +35,13 @@ func NewShortURLServiceWithAllDependencies(
 	store ShortURLStorage,
 	counter ShortURLCounter,
 	idGen IDGenerator,
-) *ShortURLService {
+) (*ShortURLService, error) {
 	if store == nil {
-		panic("short url storage must not be nil")
+		return nil, errors.New("short url storage must not be nil")
 	}
 
 	if counter == nil {
-		panic("short url counter must not be nil")
+		return nil, errors.New("short url counter must not be nil")
 	}
 
 	if idGen == nil {
@@ -48,11 +54,15 @@ func NewShortURLServiceWithAllDependencies(
 		idGen:   idGen,
 	}
 
-	return s
+	return s, nil
 }
 
 // Create creates a new short URL and returns it.
 // If entry.ID is provided, it will be used as the short URL identifier.
+// Otherwise, it generates a unique ID by querying an incrementing counter.
+// On ID collision (rare in practice due to the counter design), the method
+// retries by fetching the next counter value and regenerating an ID.
+// This loop will eventually succeed unless the counter encounters an error.
 func (s *ShortURLService) Create(
 	ctx context.Context,
 	entry model.ShortURL,
@@ -102,7 +112,7 @@ func validateShortURLID(id string) error {
 		return errors.New("id is required")
 	}
 
-	if len(id) > 10 {
+	if len(id) > maxShortURLIDLen {
 		return errors.New("id is too long")
 	}
 
