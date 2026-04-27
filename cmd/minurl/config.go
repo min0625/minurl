@@ -15,16 +15,35 @@ import (
 	"github.com/spf13/viper"
 )
 
+const (
+	logFormatText      = "text"
+	logFormatJSON      = "json"
+	otelExporterStdout = "stdout"
+	otelExporterOTLP   = "otlp"
+)
+
 type appConfig struct {
-	HTTPAddr    string
-	IDSeed      string
-	StoragePath string
+	HTTPAddr        string
+	IDSeed          string
+	StoragePath     string
+	LogFormat       string
+	OTELEnabled     bool
+	OTELServiceName string
+	OTELExporter    string
+	OTELEndpoint    string
+	OTELInsecure    bool
 }
 
 func defaultAppConfig() appConfig {
 	return appConfig{
-		HTTPAddr:    ":8888",
-		StoragePath: "minurl.sqlite3",
+		HTTPAddr:        ":8888",
+		StoragePath:     "minurl.sqlite3",
+		LogFormat:       logFormatText,
+		OTELEnabled:     false,
+		OTELServiceName: "minurl",
+		OTELExporter:    otelExporterStdout,
+		OTELEndpoint:    "",
+		OTELInsecure:    true,
 	}
 }
 
@@ -33,11 +52,17 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 	v := viper.New()
 	v.SetEnvPrefix("MINURL")
-	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
+	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_", ".", "_"))
 	v.AutomaticEnv()
 
 	v.SetDefault("http-addr", cfg.HTTPAddr)
 	v.SetDefault("storage-path", cfg.StoragePath)
+	v.SetDefault("log-format", cfg.LogFormat)
+	v.SetDefault("otel.enabled", cfg.OTELEnabled)
+	v.SetDefault("otel.service-name", cfg.OTELServiceName)
+	v.SetDefault("otel.exporter", cfg.OTELExporter)
+	v.SetDefault("otel.endpoint", cfg.OTELEndpoint)
+	v.SetDefault("otel.insecure", cfg.OTELInsecure)
 
 	if err := bindConfigFlags(v, cmd); err != nil {
 		return appConfig{}, err
@@ -49,11 +74,19 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		if err := v.ReadInConfig(); err != nil {
 			return appConfig{}, fmt.Errorf("read config file %q: %w", configPath, err)
 		}
+
+		applyHyphenatedOTelConfigKeys(v, cmd)
 	}
 
 	cfg.HTTPAddr = v.GetString("http-addr")
 	cfg.IDSeed = strings.TrimSpace(v.GetString("id-seed"))
 	cfg.StoragePath = strings.TrimSpace(v.GetString("storage-path"))
+	cfg.LogFormat = strings.ToLower(strings.TrimSpace(v.GetString("log-format")))
+	cfg.OTELEnabled = v.GetBool("otel.enabled")
+	cfg.OTELServiceName = strings.TrimSpace(v.GetString("otel.service-name"))
+	cfg.OTELExporter = strings.ToLower(strings.TrimSpace(v.GetString("otel.exporter")))
+	cfg.OTELEndpoint = strings.TrimSpace(v.GetString("otel.endpoint"))
+	cfg.OTELInsecure = v.GetBool("otel.insecure")
 
 	if cfg.HTTPAddr == "" {
 		return appConfig{}, fmt.Errorf("http-addr must not be empty")
@@ -71,14 +104,50 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		)
 	}
 
+	switch cfg.LogFormat {
+	case "", logFormatText, logFormatJSON:
+		if cfg.LogFormat == "" {
+			cfg.LogFormat = logFormatText
+		}
+	default:
+		return appConfig{}, fmt.Errorf(
+			"invalid log-format %q: expected %s or %s",
+			cfg.LogFormat,
+			logFormatText,
+			logFormatJSON,
+		)
+	}
+
+	if cfg.OTELEnabled {
+		switch cfg.OTELExporter {
+		case otelExporterStdout, otelExporterOTLP:
+			if cfg.OTELExporter == otelExporterOTLP && cfg.OTELEndpoint == "" {
+				return appConfig{}, fmt.Errorf("otel.endpoint must be set when otel.exporter=otlp")
+			}
+		default:
+			return appConfig{}, fmt.Errorf(
+				"invalid otel.exporter %q: expected %s or %s",
+				cfg.OTELExporter,
+				otelExporterStdout,
+				otelExporterOTLP,
+			)
+		}
+	}
+
+	if cfg.OTELServiceName == "" {
+		cfg.OTELServiceName = "minurl"
+	}
+
 	return cfg, nil
 }
 
 func bindConfigFlags(v *viper.Viper, cmd *cobra.Command) error {
-	for _, key := range []string{"http-addr", "id-seed", "storage-path"} {
-		f := lookupFlag(cmd, key)
+	for _, key := range []string{"http-addr", "id-seed", "storage-path", "log-format", "otel.enabled", "otel.service-name", "otel.exporter", "otel.endpoint", "otel.insecure"} {
+		flagName := strings.ReplaceAll(key, ".", "-")
+
+		f := lookupFlag(cmd, flagName)
 		if f == nil {
-			return fmt.Errorf("lookup flag %q: not found", key)
+			return fmt.Errorf("lookup flag %q: not found", flagName)
 		}
 
 		if err := v.BindPFlag(key, f); err != nil {
@@ -86,13 +155,40 @@ func bindConfigFlags(v *viper.Viper, cmd *cobra.Command) error {
 		}
 	}
 
-	for _, key := range []string{"http-addr", "id-seed", "storage-path"} {
+	for _, key := range []string{"http-addr", "id-seed", "storage-path", "log-format", "otel.enabled", "otel.service-name", "otel.exporter", "otel.endpoint", "otel.insecure"} {
 		if err := v.BindEnv(key); err != nil {
 			return fmt.Errorf("bind env %q: %w", key, err)
 		}
 	}
 
 	return nil
+}
+
+func applyHyphenatedOTelConfigKeys(v *viper.Viper, cmd *cobra.Command) {
+	if flag := lookupFlag(cmd, "otel-enabled"); flag != nil &&
+		!flag.Changed && v.IsSet("otel-enabled") {
+		v.Set("otel.enabled", v.Get("otel-enabled"))
+	}
+
+	if flag := lookupFlag(cmd, "otel-service-name"); flag != nil &&
+		!flag.Changed && v.IsSet("otel-service-name") {
+		v.Set("otel.service-name", v.Get("otel-service-name"))
+	}
+
+	if flag := lookupFlag(cmd, "otel-exporter"); flag != nil &&
+		!flag.Changed && v.IsSet("otel-exporter") {
+		v.Set("otel.exporter", v.Get("otel-exporter"))
+	}
+
+	if flag := lookupFlag(cmd, "otel-endpoint"); flag != nil &&
+		!flag.Changed && v.IsSet("otel-endpoint") {
+		v.Set("otel.endpoint", v.Get("otel-endpoint"))
+	}
+
+	if flag := lookupFlag(cmd, "otel-insecure"); flag != nil &&
+		!flag.Changed && v.IsSet("otel-insecure") {
+		v.Set("otel.insecure", v.Get("otel-insecure"))
+	}
 }
 
 func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {

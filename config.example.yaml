@@ -12,6 +12,21 @@ http-addr: ":8888"
 # Default: "minurl.sqlite3"
 storage-path: "minurl.sqlite3"
 
+# Log output format.
+# Accepted values: "text", "json"
+# Default: "text"
+log-format: "text"
+
+# OpenTelemetry tracing settings.
+# Set otel-enabled to true to enable tracing.
+# Supported exporters: "stdout", "otlp"
+# Default: stdout
+otel-enabled: false
+otel-service-name: "minurl"
+otel-exporter: "stdout"
+otel-endpoint: ""
+otel-insecure: true
+
 # Optional deterministic seed for ID generation.
 # Accepted formats:
 # - decimal: "12345"

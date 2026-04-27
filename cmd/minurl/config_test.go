@@ -34,6 +34,10 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 		t.Fatalf("set storage-path flag: %v", err)
 	}
 
+	if err := cmd.PersistentFlags().Set("log-format", "json"); err != nil {
+		t.Fatalf("set log-format flag: %v", err)
+	}
+
 	cfg, err := loadAppConfig(cmd, cfgPath)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v", err)
@@ -49,6 +53,98 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 
 	if cfg.StoragePath != "from-flag.sqlite3" {
 		t.Fatalf("StoragePath = %q, want %q", cfg.StoragePath, "from-flag.sqlite3")
+	}
+
+	if cfg.LogFormat != "json" {
+		t.Fatalf("LogFormat = %q, want %q", cfg.LogFormat, "json")
+	}
+}
+
+func TestLoadAppConfigRejectsInvalidLogFormat(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+	if err := cmd.PersistentFlags().Set("log-format", "xml"); err != nil {
+		t.Fatalf("set log-format flag: %v", err)
+	}
+
+	if _, err := loadAppConfig(cmd, ""); err == nil {
+		t.Fatal("loadAppConfig() error = nil, want non-nil")
+	}
+}
+
+func TestLoadAppConfigReadsHyphenatedOTelConfigKeys(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "otel.yaml")
+	content := []byte("http-addr: ':7000'\notel-enabled: true\notel-exporter: stdout\n")
+
+	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cmd := newRootCommand()
+
+	cfg, err := loadAppConfig(cmd, cfgPath)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if !cfg.OTELEnabled {
+		t.Fatalf("OTELEnabled = %v, want true", cfg.OTELEnabled)
+	}
+
+	if cfg.OTELExporter != "stdout" {
+		t.Fatalf("OTELExporter = %q, want %q", cfg.OTELExporter, "stdout")
+	}
+}
+
+func TestLoadAppConfigOTelEnvOverridesFile(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "otel-env.yaml")
+	content := []byte(
+		"http-addr: ':7000'\notel-enabled: false\notel-exporter: stdout\notel-endpoint: http://file:4318\n",
+	)
+
+	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	t.Setenv("MINURL_OTEL_ENABLED", "true")
+	t.Setenv("MINURL_OTEL_EXPORTER", "otlp")
+	t.Setenv("MINURL_OTEL_ENDPOINT", "http://env:4318")
+
+	cmd := newRootCommand()
+
+	cfg, err := loadAppConfig(cmd, cfgPath)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if !cfg.OTELEnabled {
+		t.Fatalf("OTELEnabled = %v, want true", cfg.OTELEnabled)
+	}
+
+	if cfg.OTELExporter != "otlp" {
+		t.Fatalf("OTELExporter = %q, want %q", cfg.OTELExporter, "otlp")
+	}
+
+	if cfg.OTELEndpoint != "http://env:4318" {
+		t.Fatalf("OTELEndpoint = %q, want %q", cfg.OTELEndpoint, "http://env:4318")
+	}
+}
+
+func TestLoadAppConfigSkipsOTelValidationWhenDisabled(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+	if err := cmd.PersistentFlags().Set("otel-enabled", "false"); err != nil {
+		t.Fatalf("set otel-enabled flag: %v", err)
+	}
+
+	if err := cmd.PersistentFlags().Set("otel-exporter", "invalid"); err != nil {
+		t.Fatalf("set otel-exporter flag: %v", err)
+	}
+
+	if _, err := loadAppConfig(cmd, ""); err != nil {
+		t.Fatalf("loadAppConfig() error = %v, want nil", err)
 	}
 }
 
