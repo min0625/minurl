@@ -12,8 +12,9 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "golang.go",
-                "humao.rest-client"
+             "golang.go",
+             "humao.rest-client",
+             "qwtel.sqlite-viewer"
             ]
         }
     }

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -17,7 +18,7 @@ import (
 	"github.com/min0625/minurl/internal/service"
 )
 
-func TestRegisterGeneratesShortURLSchemaWithRequiredID(t *testing.T) {
+func TestRegisterGeneratesShortURLSchemaWithRequiredOriginalURL(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
@@ -30,8 +31,8 @@ func TestRegisterGeneratesShortURLSchemaWithRequiredID(t *testing.T) {
 		t.Fatal("ShortURL schema not found")
 	}
 
-	if !contains(schema.Required, "id") {
-		t.Fatalf("ShortURL required fields = %v, want to include id", schema.Required)
+	if !contains(schema.Required, "original_url") {
+		t.Fatalf("ShortURL required fields = %v, want to include original_url", schema.Required)
 	}
 
 	if api.OpenAPI().Paths["/api/v1/urls"] == nil {
@@ -67,28 +68,48 @@ func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 	}
 }
 
-func TestRegisterWithNilServiceIsSafe(t *testing.T) {
+func TestRegisterCreateShortURLValidatesRequestBody(t *testing.T) {
 	t.Parallel()
 
 	mux := http.NewServeMux()
 	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
-	handler.Register(api, nil)
+	handler.Register(api, newHandlerTestService(&handlerTestStorage{}))
 
-	if api.OpenAPI().Paths["/api/v1/urls"] == nil {
-		t.Fatal("POST /api/v1/urls path not found")
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/api/v1/urls",
+		strings.NewReader(`{"original_url":"invalid-url","id":"bad*id"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp := httptest.NewRecorder()
+	mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
 	}
+}
+
+func TestRegisterGetShortURLValidatesRequestPath(t *testing.T) {
+	t.Parallel()
+
+	mux := http.NewServeMux()
+	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	handler.Register(api, newHandlerTestService(&handlerTestStorage{}))
 
 	req := httptest.NewRequestWithContext(
 		context.Background(),
 		http.MethodGet,
-		"/api/v1/urls/abc123",
+		"/api/v1/urls/bad*id",
 		nil,
 	)
+
 	resp := httptest.NewRecorder()
 	mux.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
 	}
 }
 
