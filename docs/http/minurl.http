@@ -31,5 +31,17 @@ content-type: application/json
 # If create request has not been executed yet, run the create request first.
 GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}} HTTP/1.1
 
+### Redirect to original URL (HTTP 302)
+# Navigate to short URL to perform redirect to original URL
+# If create request has not been executed yet, run the create request first.
+GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}}:redirect HTTP/1.1
+
+### Redirect to original URL with custom ID (HTTP 302)
+# Using the custom ID from createShortURLWithCustomID request
+GET {{baseUrl}}/api/v1/urls/Min:redirect HTTP/1.1
+
 ### Not found example (expected HTTP 404)
 GET {{baseUrl}}/api/v1/urls/NOT_FOUND_EXAMPLE HTTP/1.1
+
+### Redirect not found example (expected HTTP 404)
+GET {{baseUrl}}/api/v1/urls/NOT_FOUND_EXAMPLE:redirect HTTP/1.1

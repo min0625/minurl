@@ -11,8 +11,10 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humago"
+	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
+	"github.com/min0625/minurl/internal/model"
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/testhelpers"
 )
@@ -20,8 +22,8 @@ import (
 func TestRegisterGeneratesShortURLSchemaWithRequiredOriginalURL(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 
 	handler.Register(api, newHandlerTestService(t, testhelpers.NewStorage()))
 
@@ -41,13 +43,17 @@ func TestRegisterGeneratesShortURLSchemaWithRequiredOriginalURL(t *testing.T) {
 	if api.OpenAPI().Paths["/api/v1/urls/{id}"] == nil {
 		t.Fatal("GET /api/v1/urls/{id} path not found")
 	}
+
+	if api.OpenAPI().Paths["/api/v1/urls/{id}:redirect"] == nil {
+		t.Fatal("GET /api/v1/urls/{id}:redirect path not found")
+	}
 }
 
 func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 	store := testhelpers.NewStorage().WithGetError(errors.New("storage unavailable"))
 	svc := newHandlerTestService(t, store)
 	handler.Register(api, svc)
@@ -59,7 +65,7 @@ func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 		nil,
 	)
 	resp := httptest.NewRecorder()
-	mux.ServeHTTP(resp, req)
+	r.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
@@ -69,8 +75,8 @@ func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
 func TestRegisterCreateShortURLValidatesRequestBody(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 	handler.Register(api, newHandlerTestService(t, testhelpers.NewStorage()))
 
 	req := httptest.NewRequestWithContext(
@@ -82,7 +88,7 @@ func TestRegisterCreateShortURLValidatesRequestBody(t *testing.T) {
 	req.Header.Set("Content-Type", "application/json")
 
 	resp := httptest.NewRecorder()
-	mux.ServeHTTP(resp, req)
+	r.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
@@ -92,8 +98,8 @@ func TestRegisterCreateShortURLValidatesRequestBody(t *testing.T) {
 func TestRegisterGetShortURLValidatesRequestPath(t *testing.T) {
 	t.Parallel()
 
-	mux := http.NewServeMux()
-	api := humago.New(mux, huma.DefaultConfig("MinURL API", "0.1.0"))
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
 	handler.Register(api, newHandlerTestService(t, testhelpers.NewStorage()))
 
 	req := httptest.NewRequestWithContext(
@@ -104,7 +110,7 @@ func TestRegisterGetShortURLValidatesRequestPath(t *testing.T) {
 	)
 
 	resp := httptest.NewRecorder()
-	mux.ServeHTTP(resp, req)
+	r.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
@@ -124,4 +130,111 @@ func newHandlerTestService(t *testing.T, store service.ShortURLStorage) *service
 
 func contains(values []string, want string) bool {
 	return testhelpers.StringSliceContains(values, want)
+}
+
+func TestRegisterRedirectRouteRedirectsToOriginalURL(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	store := testhelpers.NewStorage()
+	svc := newHandlerTestService(t, store)
+
+	// Create a short URL in storage
+	originalURL := "https://example.com/very/long/url"
+	entry := model.ShortURL{
+		ID:          "abc123",
+		OriginalURL: originalURL,
+	}
+
+	_, err := svc.Create(context.Background(), entry)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/abc123:redirect",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusFound {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusFound)
+	}
+
+	if location := resp.Result().Header.Get("Location"); location != originalURL {
+		t.Fatalf("Location header = %q, want %q", location, originalURL)
+	}
+}
+
+func TestRegisterRedirectRouteReturns404WhenShortURLNotFound(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	svc := newHandlerTestService(t, testhelpers.NewStorage())
+	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/xyz789:redirect",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNotFound)
+	}
+}
+
+func TestRegisterRedirectRouteReturnsBadRequestForInvalidID(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	svc := newHandlerTestService(t, testhelpers.NewStorage())
+	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/bad!id:redirect",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+}
+
+func TestRegisterRedirectRouteReturns500WhenStorageFails(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	store := testhelpers.NewStorage().WithGetError(errors.New("storage unavailable"))
+	svc := newHandlerTestService(t, store)
+	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/abc123:redirect",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
+	}
 }
