@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -84,14 +85,28 @@ func runServer(cfg appConfig) error {
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	server.RegisterOnShutdown(func() {
+		slog.Info("server shutdown hook triggered")
+	})
+
+	listener, err := new(net.ListenConfig).Listen(ctx, "tcp", cfg.HTTPAddr)
+	if err != nil {
+		return fmt.Errorf("listen on %q: %w", cfg.HTTPAddr, err)
+	}
+
+	boundAddr, docsURL := serverListenLogValues(listener.Addr())
 
 	listenErrCh := make(chan error, 1)
 
 	go func() {
-		slog.With("addr", cfg.HTTPAddr, "docs_url", "http://localhost"+cfg.HTTPAddr+"/docs").
-			InfoContext(ctx, "server listening")
+		logger := slog.With("addr", boundAddr)
+		if docsURL != "" {
+			logger = logger.With("docs_url", docsURL)
+		}
 
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		logger.InfoContext(ctx, "server listening")
+
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 			listenErrCh <- err
 		}
 	}()
@@ -99,7 +114,7 @@ func runServer(cfg appConfig) error {
 	select {
 	case <-ctx.Done():
 	case err := <-listenErrCh:
-		return fmt.Errorf("listen and serve: %w", err)
+		return fmt.Errorf("serve http: %w", err)
 	}
 
 	slog.InfoContext(ctx, "shutting down")
@@ -112,4 +127,15 @@ func runServer(cfg appConfig) error {
 	}
 
 	return nil
+}
+
+func serverListenLogValues(addr net.Addr) (string, string) {
+	boundAddr := addr.String()
+
+	_, port, err := net.SplitHostPort(boundAddr)
+	if err != nil || port == "" {
+		return boundAddr, ""
+	}
+
+	return boundAddr, "http://" + net.JoinHostPort("localhost", port) + "/docs"
 }

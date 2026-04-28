@@ -84,6 +84,30 @@ func (in *getShortURLInput) Resolve(huma.Context) []error {
 	return validateRequest(in, "invalid get short URL request")
 }
 
+type redirectInput struct {
+	ID string `path:"id" doc:"Short URL identifier" validate:"required,shortid"`
+}
+
+var _ huma.Resolver = (*redirectInput)(nil)
+
+func (in *redirectInput) Resolve(huma.Context) []error {
+	return validateRequest(in, "invalid short URL ID")
+}
+
+type redirectOutput struct {
+	Status   int
+	Location string `header:"Location" doc:"URL to redirect to"`
+}
+
+var redirectShortURLOperation = huma.Operation{
+	OperationID:   "redirect-short-url",
+	Method:        http.MethodGet,
+	Path:          "/api/v1/urls/{id}:redirect",
+	Summary:       "Redirect to original URL",
+	Tags:          []string{"ShortURL"},
+	DefaultStatus: http.StatusFound,
+}
+
 // registerCreateShortURLRoute registers the create short URL endpoint on the given API.
 // The handler implements the full business logic using the provided service.
 func registerCreateShortURLRoute(api huma.API, svc ShortURLService) {
@@ -126,10 +150,35 @@ func registerGetShortURLRoute(api huma.API, svc ShortURLService) {
 	)
 }
 
+// registerRedirectRoute registers the redirect endpoint on the given Huma API.
+// The handler retrieves a short URL and performs an HTTP 302 redirect to the original URL.
+func registerRedirectRoute(api huma.API, svc ShortURLService) {
+	huma.Register(
+		api,
+		redirectShortURLOperation,
+		func(ctx context.Context, input *redirectInput) (*redirectOutput, error) {
+			entry, ok, err := svc.Get(ctx, input.ID)
+			if err != nil {
+				return nil, huma.Error500InternalServerError("failed to get short URL", err)
+			}
+
+			if !ok {
+				return nil, huma.Error404NotFound("short URL not found")
+			}
+
+			return &redirectOutput{
+				Status:   http.StatusFound,
+				Location: entry.OriginalURL,
+			}, nil
+		},
+	)
+}
+
 // Register registers all short URL routes onto the given API with the provided service.
 func Register(api huma.API, svc ShortURLService) {
 	registerCreateShortURLRoute(api, svc)
 	registerGetShortURLRoute(api, svc)
+	registerRedirectRoute(api, svc)
 }
 
 // RegisterOpenAPI registers all short URL routes onto the given API for OpenAPI schema generation.
@@ -147,6 +196,14 @@ func RegisterOpenAPI(api huma.API) {
 		api,
 		getShortURLOperation,
 		func(_ context.Context, _ *getShortURLInput) (*shortURLOutput, error) {
+			return nil, huma.Error500InternalServerError("not implemented", nil)
+		},
+	)
+
+	huma.Register(
+		api,
+		redirectShortURLOperation,
+		func(_ context.Context, _ *redirectInput) (*redirectOutput, error) {
 			return nil, huma.Error500InternalServerError("not implemented", nil)
 		},
 	)

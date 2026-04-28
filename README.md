@@ -24,6 +24,47 @@ API details are maintained in OpenAPI files under `docs/openapi/`:
 Online viewer:
 [https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml](https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml)
 
+### API Endpoints
+
+**Create a short URL**
+(`id` is optional. If omitted, the server auto-generates one.)
+```
+POST /api/v1/urls
+Content-Type: application/json
+
+{
+  "original_url": "https://example.com/very/long/url",
+  "id": "myshort"
+}
+
+Response: 200 OK
+{
+  "id": "myshort",
+  "original_url": "https://example.com/very/long/url",
+  "create_time": "2026-04-28T16:00:00Z"
+}
+```
+
+**Get short URL metadata**
+```
+GET /api/v1/urls/{id}
+
+Response: 200 OK
+{
+  "id": "myshort",
+  "original_url": "https://example.com/very/long/url",
+  "create_time": "2026-04-28T16:00:00Z"
+}
+```
+
+**Redirect to original URL**
+```
+GET /api/v1/urls/{id}:redirect
+
+Response: 302 Found
+Location: https://example.com/very/long/url
+```
+
 ## HTTP Debug Requests
 
 Reusable REST Client examples are available at:

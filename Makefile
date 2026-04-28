@@ -9,6 +9,17 @@ NEW_FROM_REV ?= HEAD
 OPENAPI_DIR ?= docs/openapi
 BIN_DIR ?= bin
 OUT_BINARY ?= $(BIN_DIR)/minurl
+VERBOSE ?= 0
+
+GO_TEST_FLAGS := -race -failfast
+ifneq ($(filter 1 yes true y on,$(VERBOSE)),)
+GO_TEST_FLAGS += -v
+endif
+
+GOLANGCI_LINT_FLAGS := --new-from-rev=$(NEW_FROM_REV)
+ifneq ($(filter 1 yes true y on,$(VERBOSE)),)
+GOLANGCI_LINT_FLAGS += -v
+endif
 
 .PHONY: docker-build docker-run fix lint test check-tidy check-openapi check openapi build
 
@@ -20,13 +31,13 @@ docker-run:
 
 fix:
 	go mod tidy
-	golangci-lint run -v --new-from-rev=$(NEW_FROM_REV) --fix ./...
+	golangci-lint run $(GOLANGCI_LINT_FLAGS) --fix ./...
 
 lint:
-	golangci-lint run -v --new-from-rev=$(NEW_FROM_REV) ./...
+	golangci-lint run $(GOLANGCI_LINT_FLAGS) ./...
 
 test:
-	go test -v -race -failfast ./...
+	go test $(GO_TEST_FLAGS) ./...
 
 check-tidy:
 	go mod tidy -diff

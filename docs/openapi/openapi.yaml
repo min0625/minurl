@@ -140,3 +140,31 @@ paths:
       summary: Get a short URL by ID
       tags:
         - ShortURL
+  /api/v1/urls/{id}:redirect:
+    get:
+      operationId: redirect-short-url
+      parameters:
+        - description: Short URL identifier
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Short URL identifier
+            type: string
+      responses:
+        "302":
+          description: Found
+          headers:
+            Location:
+              schema:
+                description: URL to redirect to
+                type: string
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Redirect to original URL
+      tags:
+        - ShortURL
