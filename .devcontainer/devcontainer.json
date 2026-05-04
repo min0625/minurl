@@ -16,7 +16,8 @@
             "extensions": [
              "golang.go",
              "humao.rest-client",
-             "qwtel.sqlite-viewer"
+             "qwtel.sqlite-viewer",
+             "cweijan.vscode-postgresql-client2"
             ]
         }
     }

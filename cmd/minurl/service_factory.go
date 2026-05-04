@@ -4,10 +4,42 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/store"
 )
+
+const (
+	backendSQLite   = "sqlite"
+	backendPostgres = "postgres"
+)
+
+// detectStorageBackend infers the backend type from the DSN string.
+// Returns an error for unrecognised schemes.
+//
+// Recognised forms:
+//
+//	sqlite3://path  → "sqlite"
+//	postgres://...  → "postgres"
+func detectStorageBackend(dsn string) (string, error) {
+	switch {
+	case strings.HasPrefix(dsn, "postgres://"):
+		return backendPostgres, nil
+	case strings.HasPrefix(dsn, "sqlite3://"):
+		return backendSQLite, nil
+	default:
+		scheme := dsn
+		if idx := strings.Index(dsn, "://"); idx >= 0 {
+			scheme = dsn[:idx]
+		}
+
+		return "", fmt.Errorf(
+			"unsupported storage DSN scheme %q: use sqlite3:// or postgres://",
+			scheme,
+		)
+	}
+}
 
 func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.Closer, error) {
 	var idGen service.IDGenerator
@@ -23,17 +55,40 @@ func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.C
 		idGen = service.NewDefaultFeistelIDGenerator()
 	}
 
-	sqliteStore, sqliteCounter, sqliteCloser, err := store.NewSQLiteBackends(cfg.StoragePath)
+	var (
+		svcStore   service.ShortURLStorage
+		svcCounter service.ShortURLCounter
+		closer     io.Closer
+	)
+
+	backend, err := detectStorageBackend(cfg.StorageDSN)
 	if err != nil {
-		return nil, nil, fmt.Errorf("open sqlite backends: %w", err)
+		return nil, nil, err
 	}
 
-	svc, err := service.NewShortURLServiceWithAllDependencies(sqliteStore, sqliteCounter, idGen)
+	switch backend {
+	case backendPostgres:
+		pgStore, pgCounter, pgCloser, err := store.NewPostgresBackends(cfg.StorageDSN)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open postgres backends: %w", err)
+		}
+
+		svcStore, svcCounter, closer = pgStore, pgCounter, pgCloser
+	default: // sqlite
+		sqliteStore, sqliteCounter, sqliteCloser, err := store.NewSQLiteBackends(cfg.StorageDSN)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open sqlite backends: %w", err)
+		}
+
+		svcStore, svcCounter, closer = sqliteStore, sqliteCounter, sqliteCloser
+	}
+
+	svc, err := service.NewShortURLServiceWithAllDependencies(svcStore, svcCounter, idGen)
 	if err != nil {
-		_ = sqliteCloser.Close()
+		_ = closer.Close()
 
 		return nil, nil, fmt.Errorf("create short url service: %w", err)
 	}
 
-	return svc, sqliteCloser, nil
+	return svc, closer, nil
 }

@@ -8,6 +8,8 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
+	"net/url"
+	"strings"
 
 	_ "modernc.org/sqlite" // register sqlite driver
 )
@@ -24,10 +26,17 @@ func (c *sqliteDBCloser) Close() error {
 
 // NewSQLiteBackends opens a single SQLite connection and returns storage and
 // counter backends that share the same database.
+//
+// dsn must be a sqlite3:// URL:
+//
+//	sqlite3://minurl.sqlite3
+//	sqlite3://var/data/minurl.sqlite3
+//	sqlite3:///absolute/path/minurl.sqlite3
+//	sqlite3://minurl.sqlite3?cache=shared
 func NewSQLiteBackends(
-	path string,
+	dsn string,
 ) (*SQLiteShortURLStorage, *SQLiteShortURLCounter, io.Closer, error) {
-	db, err := openSQLiteDB(path)
+	db, err := openSQLiteDB(dsn)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -39,7 +48,12 @@ func NewSQLiteBackends(
 	return storage, counter, closer, nil
 }
 
-func openSQLiteDB(path string) (*sql.DB, error) {
+func openSQLiteDB(dsn string) (*sql.DB, error) {
+	path, err := parseSQLiteDSN(dsn)
+	if err != nil {
+		return nil, err
+	}
+
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
@@ -87,4 +101,39 @@ func migrateSQLite(ctx context.Context, db *sql.DB) error {
 	)
 
 	return err
+}
+
+// parseSQLiteDSN converts a sqlite3:// URL to the driver path accepted by
+// modernc.org/sqlite.
+//
+// URL → driver path mapping:
+//
+//	sqlite3://minurl.sqlite3            → minurl.sqlite3
+//	sqlite3://var/data/minurl.sqlite3   → var/data/minurl.sqlite3
+//	sqlite3:///absolute/path/minurl.db  → /absolute/path/minurl.db
+//	sqlite3://minurl.sqlite3?cache=shared → file:minurl.sqlite3?cache=shared
+func parseSQLiteDSN(dsn string) (string, error) {
+	if !strings.HasPrefix(dsn, "sqlite3://") {
+		return "", fmt.Errorf("sqlite3 dsn must start with sqlite3://: %q", dsn)
+	}
+
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "", fmt.Errorf("parse sqlite3 dsn %q: %w", dsn, err)
+	}
+
+	// u.Host holds the leading segment for relative paths:
+	//   sqlite3://dir/file → host="dir", path="/file" → "dir/file"
+	// For absolute paths (sqlite3:///abs):
+	//   host="", path="/abs" → "/abs"
+	filePath := u.Host + u.Path
+	if filePath == "" {
+		return "", fmt.Errorf("sqlite3 dsn has empty path: %q", dsn)
+	}
+
+	if u.RawQuery != "" {
+		return "file:" + filePath + "?" + u.RawQuery, nil
+	}
+
+	return filePath, nil
 }

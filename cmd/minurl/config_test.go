@@ -11,7 +11,9 @@ import (
 
 func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
-	content := []byte("http-addr: ':7000'\nid-seed: '11'\nstorage-path: 'from-file.sqlite3'\n")
+	content := []byte(
+		"http-addr: ':7000'\nid-seed: '11'\nstorage-dsn: 'sqlite3://from-file.sqlite3'\n",
+	)
 
 	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
@@ -19,7 +21,7 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 
 	t.Setenv("MINURL_HTTP_ADDR", ":8000")
 	t.Setenv("MINURL_ID_SEED", "22")
-	t.Setenv("MINURL_STORAGE_PATH", "from-env.sqlite3")
+	t.Setenv("MINURL_STORAGE_DSN", "sqlite3://from-env.sqlite3")
 
 	cmd := newRootCommand()
 	if err := cmd.PersistentFlags().Set("http-addr", ":9000"); err != nil {
@@ -30,8 +32,8 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 		t.Fatalf("set id-seed flag: %v", err)
 	}
 
-	if err := cmd.PersistentFlags().Set("storage-path", "from-flag.sqlite3"); err != nil {
-		t.Fatalf("set storage-path flag: %v", err)
+	if err := cmd.PersistentFlags().Set("storage-dsn", "sqlite3://from-flag.sqlite3"); err != nil {
+		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
 	if err := cmd.PersistentFlags().Set("log-format", "json"); err != nil {
@@ -51,8 +53,8 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 		t.Fatalf("IDSeed = %q, want %q", cfg.IDSeed, "33")
 	}
 
-	if cfg.StoragePath != "from-flag.sqlite3" {
-		t.Fatalf("StoragePath = %q, want %q", cfg.StoragePath, "from-flag.sqlite3")
+	if cfg.StorageDSN != "sqlite3://from-flag.sqlite3" {
+		t.Fatalf("StorageDSN = %q, want %q", cfg.StorageDSN, "sqlite3://from-flag.sqlite3")
 	}
 
 	if cfg.LogFormat != "json" {
@@ -165,8 +167,8 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 	t.Parallel()
 
 	svcA, closerA, err := newShortURLServiceFromConfig(appConfig{
-		IDSeed:      "1234",
-		StoragePath: filepath.Join(t.TempDir(), "a.sqlite3"),
+		IDSeed:     "1234",
+		StorageDSN: "sqlite3:///" + filepath.Join(t.TempDir(), "a.sqlite3"),
 	})
 	if err != nil {
 		t.Fatalf("newShortURLServiceFromConfig(seed 1234) error = %v", err)
@@ -179,8 +181,8 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 	}()
 
 	svcB, closerB, err := newShortURLServiceFromConfig(appConfig{
-		IDSeed:      "1234",
-		StoragePath: filepath.Join(t.TempDir(), "b.sqlite3"),
+		IDSeed:     "1234",
+		StorageDSN: "sqlite3:///" + filepath.Join(t.TempDir(), "b.sqlite3"),
 	})
 	if err != nil {
 		t.Fatalf("newShortURLServiceFromConfig(seed 1234 second) error = %v", err)
@@ -193,8 +195,8 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 	}()
 
 	svcC, closerC, err := newShortURLServiceFromConfig(appConfig{
-		IDSeed:      "9999",
-		StoragePath: filepath.Join(t.TempDir(), "c.sqlite3"),
+		IDSeed:     "9999",
+		StorageDSN: "sqlite3:///" + filepath.Join(t.TempDir(), "c.sqlite3"),
 	})
 	if err != nil {
 		t.Fatalf("newShortURLServiceFromConfig(seed 9999) error = %v", err)
@@ -239,25 +241,25 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 	}
 }
 
-func TestLoadAppConfigRejectsEmptySQLitePath(t *testing.T) {
+func TestLoadAppConfigRejectsEmptyStorageDSN(t *testing.T) {
 	t.Parallel()
 
 	cmd := newRootCommand()
-	if err := cmd.PersistentFlags().Set("storage-path", ""); err != nil {
-		t.Fatalf("set storage-path flag: %v", err)
+	if err := cmd.PersistentFlags().Set("storage-dsn", ""); err != nil {
+		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
 	if _, err := loadAppConfig(cmd, ""); err == nil {
-		t.Fatal("loadAppConfig() error = nil, want non-nil for empty storage-path")
+		t.Fatal("loadAppConfig() error = nil, want non-nil for empty storage-dsn")
 	}
 }
 
 func TestNewShortURLServiceFromConfigSQLitePersists(t *testing.T) {
 	t.Parallel()
 
-	dbPath := t.TempDir() + "/test.sqlite3"
+	dbPath := "sqlite3:///" + t.TempDir() + "/test.sqlite3"
 
-	cfg := appConfig{StoragePath: dbPath, IDSeed: "7"}
+	cfg := appConfig{StorageDSN: dbPath, IDSeed: "7"}
 
 	svc, closer, err := newShortURLServiceFromConfig(cfg)
 	if err != nil {
@@ -315,5 +317,79 @@ func TestNewShortURLServiceFromConfigSQLitePersists(t *testing.T) {
 			entry2.ID,
 			entry.ID,
 		)
+	}
+}
+
+func TestLoadAppConfigRejectsInvalidStorageBackend(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+	if err := cmd.PersistentFlags().Set("storage-dsn", "mysql://localhost/db"); err != nil {
+		t.Fatalf("set storage-dsn flag: %v", err)
+	}
+
+	if _, err := loadAppConfig(cmd, ""); err == nil {
+		t.Fatal("loadAppConfig() error = nil, want non-nil for unknown DSN scheme")
+	}
+}
+
+func TestLoadAppConfigRejectsPostgresWithoutDSN(t *testing.T) {
+	t.Parallel()
+
+	// An empty storage-dsn is rejected regardless of the intended backend.
+	cmd := newRootCommand()
+	if err := cmd.PersistentFlags().Set("storage-dsn", ""); err != nil {
+		t.Fatalf("set storage-dsn flag: %v", err)
+	}
+
+	if _, err := loadAppConfig(cmd, ""); err == nil {
+		t.Fatal("loadAppConfig() error = nil, want non-nil for empty storage-dsn")
+	}
+}
+
+func TestLoadAppConfigAcceptsPostgresWithDSN(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+	if err := cmd.PersistentFlags().
+		Set("storage-dsn", "postgres://localhost:5432/minurl?sslmode=disable"); err != nil {
+		t.Fatalf("set storage-dsn flag: %v", err)
+	}
+
+	cfg, err := loadAppConfig(cmd, "")
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v, want nil", err)
+	}
+
+	if cfg.StorageDSN != "postgres://localhost:5432/minurl?sslmode=disable" {
+		t.Fatalf(
+			"StorageDSN = %q, want %q",
+			cfg.StorageDSN,
+			"postgres://localhost:5432/minurl?sslmode=disable",
+		)
+	}
+}
+
+func TestLoadAppConfigStorageBackendDefaultsSQLite(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+
+	cfg, err := loadAppConfig(cmd, "")
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.StorageDSN != "sqlite3://minurl.sqlite3" {
+		t.Fatalf("StorageDSN = %q, want %q", cfg.StorageDSN, "sqlite3://minurl.sqlite3")
+	}
+
+	backend, err := detectStorageBackend(cfg.StorageDSN)
+	if err != nil {
+		t.Fatalf("detectStorageBackend(%q) error = %v", cfg.StorageDSN, err)
+	}
+
+	if backend != "sqlite" {
+		t.Fatalf("detectStorageBackend(%q) = %q, want sqlite", cfg.StorageDSN, backend)
 	}
 }
