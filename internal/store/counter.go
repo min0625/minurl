@@ -15,17 +15,6 @@ type SQLiteShortURLCounter struct {
 	db *sql.DB
 }
 
-// NewSQLiteShortURLCounter opens (or creates) a SQLite database at the given
-// path and runs the schema migration.
-func NewSQLiteShortURLCounter(path string) (*SQLiteShortURLCounter, error) {
-	db, err := openSQLiteDB(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SQLiteShortURLCounter{db: db}, nil
-}
-
 // Close releases the database connection.
 func (c *SQLiteShortURLCounter) Close() error {
 	return c.db.Close()
