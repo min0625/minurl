@@ -1,3 +1,9 @@
+# Docker Compose example for running minurl with SQLite
+#
+# USAGE: Copy this file to docker-compose.sqlite.yml before running:
+#   cp docker-compose.sqlite.example.yml docker-compose.sqlite.yml
+#   docker-compose -f docker-compose.sqlite.yml up
+
 services:
   nginx:
     image: nginx:1-alpine
@@ -17,7 +23,7 @@ services:
     expose:
       - "8888"
     environment:
-      MINURL_STORAGE_DSN: "sqlite3:///data/minurl.sqlite3"
+      MINURL_STORAGE_DSN: "${MINURL_STORAGE_DSN:-sqlite3:///data/minurl.sqlite3}"
       MINURL_LOG_FORMAT: "json"
     volumes:
       - minurl_data:/data

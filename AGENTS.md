@@ -21,6 +21,9 @@ Current runtime provides a Cobra-based CLI entrypoint and HTTP server startup vi
 - Main module: `github.com/min0625/minurl`
 - Main entry point: `cmd/minurl/main.go`
 - Docker output binary: `minurl`
+- Deployment configs: `deploy/docker-compose/` — includes PostgreSQL and SQLite example configurations (`.example.yml` format; copy and customize before use)
+- HTTP listen port: `:8888` (default)
+- Configuration precedence: CLI flags > env vars > config file > defaults
 
 ## Useful Commands
 

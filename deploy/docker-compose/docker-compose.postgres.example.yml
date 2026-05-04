@@ -1,0 +1,64 @@
+# Docker Compose example for running minurl with PostgreSQL
+#
+# USAGE: Copy this file to docker-compose.postgres.yml and customize
+# the environment variables before running:
+#   cp docker-compose.postgres.example.yml docker-compose.postgres.yml
+#   # Edit docker-compose.postgres.yml with your credentials and settings
+#   docker-compose -f docker-compose.postgres.yml up
+
+services:
+  nginx:
+    image: nginx:1-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - minurl
+    restart: unless-stopped
+
+  minurl:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: minurl:latest
+    expose:
+      - "8888"
+    environment:
+      # Configure storage DSN.
+      #
+      # For LOCAL DEVELOPMENT (sslmode=disable is acceptable):
+      #   MINURL_STORAGE_DSN: "postgres://minurl:password@postgres:5432/minurl?sslmode=disable"
+      #
+      # For PRODUCTION (always use encrypted connections):
+      #   MINURL_STORAGE_DSN: "postgres://minurl:password@postgres:5432/minurl?sslmode=require"
+      #   or
+      #   MINURL_STORAGE_DSN: "postgres://minurl:password@postgres:5432/minurl?sslmode=verify-full"
+      #
+      # Consider using .env files or Docker secrets instead of hardcoding credentials.
+      MINURL_STORAGE_DSN: "${MINURL_STORAGE_DSN:-postgres://minurl:minurl@postgres:5432/minurl?sslmode=disable}"
+      MINURL_LOG_FORMAT: "json"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      # WARNING: Replace these with secure, randomly generated credentials.
+      # Consider using Docker secrets or a secrets management service in production.
+      POSTGRES_USER: "${POSTGRES_USER:-minurl}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-minurl}"
+      POSTGRES_DB: "${POSTGRES_DB:-minurl}"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-minurl} -d ${POSTGRES_DB:-minurl}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
