@@ -218,6 +218,27 @@ You can also override port mapping:
 make docker-run DOCKER_PORT=9090:8888
 ```
 
+### Deploy with Docker Compose
+
+Two Docker Compose configurations are available in the repository root.
+
+**SQLite variant** (single-node, no external database):
+
+```bash
+docker compose -f docker-compose.sqlite.yml up -d
+```
+
+**PostgreSQL variant** (external database):
+
+```bash
+# Optionally set a custom password; defaults to "minurl"
+POSTGRES_PASSWORD=secret docker compose -f docker-compose.postgres.yml up -d
+```
+
+Both configurations start an nginx reverse proxy that listens on port `80` and
+forwards requests to the `minurl` service. The nginx configuration is located at
+`deploy/nginx/default.conf`.
+
 ### Export OpenAPI docs
 
 Generate OpenAPI files directly from the app contract (no server startup required):

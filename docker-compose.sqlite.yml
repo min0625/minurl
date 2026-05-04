@@ -1,0 +1,26 @@
+services:
+  minurl:
+    image: minurl:latest
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      # Three slashes (sqlite3:///...) denote an absolute path inside the container.
+      MINURL_STORAGE_DSN: sqlite3:///data/minurl.sqlite3
+    volumes:
+      - minurl-data:/data
+    expose:
+      - "8888"
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - minurl
+
+volumes:
+  minurl-data:
