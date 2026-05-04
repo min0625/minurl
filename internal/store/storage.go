@@ -17,17 +17,6 @@ type SQLiteShortURLStorage struct {
 	db *sql.DB
 }
 
-// NewSQLiteShortURLStorage opens (or creates) a SQLite database at the given path
-// and runs the schema migration.
-func NewSQLiteShortURLStorage(path string) (*SQLiteShortURLStorage, error) {
-	db, err := openSQLiteDB(path)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SQLiteShortURLStorage{db: db}, nil
-}
-
 // CreateIfAbsent stores the entry if the ID does not already exist.
 // Returns true if the entry was inserted, false if it already existed.
 func (s *SQLiteShortURLStorage) CreateIfAbsent(

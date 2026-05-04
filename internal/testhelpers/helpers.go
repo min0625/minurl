@@ -12,14 +12,3 @@ func StringSliceContains(values []string, want string) bool {
 
 	return false
 }
-
-// RuneInString checks if a rune is present in a string.
-func RuneInString(r rune, s string) bool {
-	for _, ch := range s {
-		if ch == r {
-			return true
-		}
-	}
-
-	return false
-}
