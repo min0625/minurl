@@ -46,9 +46,14 @@ func NewDefaultFeistelIDGenerator() *FeistelIDGenerator {
 	return NewFeistelIDGeneratorWithSeed(defaultFeistelSeed)
 }
 
+// permuted returns the Feistel-permuted value of the given sequence.
+func (g *FeistelIDGenerator) permuted(sequence uint32) uint32 {
+	return feistelPermute(sequence, g.keys)
+}
+
 // Generate converts a monotonically increasing sequence into a base58 short ID.
 func (g *FeistelIDGenerator) Generate(sequence uint32) string {
-	permuted := feistelPermute(sequence, g.keys)
+	permuted := g.permuted(sequence)
 
 	return encodeBase58(permuted)
 }

@@ -7,12 +7,15 @@ echo 'eval "$(mise activate bash)"' >>~/.bashrc               # this sets up int
 
 mise trust .
 
-MISE_NODE_VERIFY=false mise install
+mise install
 
 mise exec -- go mod download
 
 mise exec -- go install -v golang.org/x/tools/gopls@latest
 mise exec -- go install -v github.com/go-delve/delve/cmd/dlv@latest
+
+pipx install pre-commit
+pre-commit install --install-hooks
 
 if [[ -f ".devcontainer/post_create.local.sh" ]]; then
     source ".devcontainer/post_create.local.sh"
