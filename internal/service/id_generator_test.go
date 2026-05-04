@@ -14,7 +14,7 @@ func TestFeistelCollisionSample(t *testing.T) {
 	generator := NewDefaultFeistelIDGenerator()
 
 	// Use bitset to track permuted values. Allocate space for all uint32 values.
-	seen := bitset.New(0)
+	seen := bitset.New(sampleSize)
 
 	for i := uint32(0); i < sampleSize; i++ {
 		v := generator.permuted(i)
