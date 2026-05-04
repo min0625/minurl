@@ -106,7 +106,7 @@ Global options:
 - `--config`: path to a configuration file (applies to all commands)
 - `--http-addr`: HTTP listen address (default `:8888`)
 - `--id-seed`: deterministic seed for ID key derivation (uint32, empty means built-in default seed)
-- `--storage-path`: SQLite database file path (default `minurl.sqlite3`)
+- `--storage-dsn`: storage DSN; `sqlite3://path` for SQLite (default `sqlite3://minurl.sqlite3`) or `postgres://...` for PostgreSQL
 
 Configuration precedence is:
 
@@ -124,12 +124,24 @@ Environment variable names:
 
 - `MINURL_HTTP_ADDR`
 - `MINURL_ID_SEED`
-- `MINURL_STORAGE_PATH`
+- `MINURL_STORAGE_DSN`
 
 Example (env):
 
 ```bash
-MINURL_HTTP_ADDR=:9090 MINURL_ID_SEED=12345 MINURL_STORAGE_PATH=minurl.sqlite3 go run ./cmd/minurl
+MINURL_HTTP_ADDR=:9090 MINURL_ID_SEED=12345 MINURL_STORAGE_DSN=sqlite3://minurl.sqlite3 go run ./cmd/minurl
+```
+
+PostgreSQL example (env):
+
+```bash
+MINURL_STORAGE_DSN="postgres://localhost:5432/minurl?sslmode=disable" go run ./cmd/minurl
+```
+
+PostgreSQL example (flags):
+
+```bash
+go run ./cmd/minurl --storage-dsn "postgres://localhost:5432/minurl?sslmode=disable"
 ```
 
 Example (flags):
@@ -148,7 +160,7 @@ Then edit `config.yaml` as needed, for example:
 
 ```yaml
 http-addr: ":9090"
-storage-path: "./data/minurl.sqlite3"
+storage-dsn: "sqlite3://./data/minurl.sqlite3"
 id-seed: "12345"
 ```
 
@@ -290,7 +302,7 @@ then commit updates under `docs/openapi/`.
 4. ✅ Add tests and error handling.
 5. Add redirect endpoint (`GET /{id}` → `302` to original URL).
 6. Add custom alias support.
-7. Add pluggable database backends (MySQL / PostgreSQL / DynamoDB).
+7. ✅ Add pluggable database backends (MySQL / PostgreSQL / DynamoDB).
 
 ## License
 

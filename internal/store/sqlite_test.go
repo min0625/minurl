@@ -5,10 +5,75 @@ import (
 	"testing"
 )
 
+func TestParseSQLiteDSN(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name    string
+		dsn     string
+		want    string
+		wantErr bool
+	}{
+		{
+			name:    "bare file path is rejected",
+			dsn:     "minurl.sqlite3",
+			wantErr: true,
+		},
+		{
+			name: "simple sqlite3 scheme",
+			dsn:  "sqlite3://minurl.sqlite3",
+			want: "minurl.sqlite3",
+		},
+		{
+			name: "relative subdirectory",
+			dsn:  "sqlite3://var/data/minurl.sqlite3",
+			want: "var/data/minurl.sqlite3",
+		},
+		{
+			name: "absolute path (three slashes)",
+			dsn:  "sqlite3:///absolute/path/minurl.sqlite3",
+			want: "/absolute/path/minurl.sqlite3",
+		},
+		{
+			name: "with query params",
+			dsn:  "sqlite3://minurl.sqlite3?cache=shared",
+			want: "file:minurl.sqlite3?cache=shared",
+		},
+		{
+			name:    "empty path",
+			dsn:     "sqlite3://",
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := parseSQLiteDSN(tc.dsn)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("parseSQLiteDSN(%q) error = nil, want non-nil", tc.dsn)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("parseSQLiteDSN(%q) error = %v", tc.dsn, err)
+			}
+
+			if got != tc.want {
+				t.Fatalf("parseSQLiteDSN(%q) = %q, want %q", tc.dsn, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestOpenSQLiteDBUsesSingleConnectionPool(t *testing.T) {
 	t.Parallel()
 
-	db, err := openSQLiteDB(t.TempDir() + "/pool.sqlite3")
+	db, err := openSQLiteDB("sqlite3:///" + t.TempDir() + "/pool.sqlite3")
 	if err != nil {
 		t.Fatalf("openSQLiteDB() error = %v", err)
 	}
@@ -27,7 +92,7 @@ func TestOpenSQLiteDBUsesSingleConnectionPool(t *testing.T) {
 func TestSQLiteShortURLCounterNextInitializesMissingCounterRow(t *testing.T) {
 	t.Parallel()
 
-	_, counter, closer, err := NewSQLiteBackends(t.TempDir() + "/counter.sqlite3")
+	_, counter, closer, err := NewSQLiteBackends("sqlite3:///" + t.TempDir() + "/counter.sqlite3")
 	if err != nil {
 		t.Fatalf("NewSQLiteBackends() error = %v", err)
 	}

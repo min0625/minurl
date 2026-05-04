@@ -22,7 +22,7 @@ const (
 var configKeys = []string{
 	"http-addr",
 	"id-seed",
-	"storage-path",
+	"storage-dsn",
 	"log-format",
 	"otel.enabled",
 	"otel.service-name",
@@ -34,7 +34,7 @@ var configKeys = []string{
 type appConfig struct {
 	HTTPAddr        string
 	IDSeed          string
-	StoragePath     string
+	StorageDSN      string
 	LogFormat       string
 	OTELEnabled     bool
 	OTELServiceName string
@@ -46,7 +46,7 @@ type appConfig struct {
 func defaultAppConfig() appConfig {
 	return appConfig{
 		HTTPAddr:        ":8888",
-		StoragePath:     "minurl.sqlite3",
+		StorageDSN:      "sqlite3://minurl.sqlite3",
 		LogFormat:       logFormatText,
 		OTELEnabled:     false,
 		OTELServiceName: "minurl",
@@ -65,7 +65,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	v.AutomaticEnv()
 
 	v.SetDefault("http-addr", cfg.HTTPAddr)
-	v.SetDefault("storage-path", cfg.StoragePath)
+	v.SetDefault("storage-dsn", cfg.StorageDSN)
 	v.SetDefault("log-format", cfg.LogFormat)
 	v.SetDefault("otel.enabled", cfg.OTELEnabled)
 	v.SetDefault("otel.service-name", cfg.OTELServiceName)
@@ -89,7 +89,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 	cfg.HTTPAddr = v.GetString("http-addr")
 	cfg.IDSeed = strings.TrimSpace(v.GetString("id-seed"))
-	cfg.StoragePath = strings.TrimSpace(v.GetString("storage-path"))
+	cfg.StorageDSN = strings.TrimSpace(v.GetString("storage-dsn"))
 	cfg.LogFormat = strings.ToLower(strings.TrimSpace(v.GetString("log-format")))
 	cfg.OTELEnabled = v.GetBool("otel.enabled")
 	cfg.OTELServiceName = strings.TrimSpace(v.GetString("otel.service-name"))
@@ -107,10 +107,12 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		}
 	}
 
-	if cfg.StoragePath == "" {
-		return appConfig{}, fmt.Errorf(
-			"storage-path must not be empty",
-		)
+	if cfg.StorageDSN == "" {
+		return appConfig{}, fmt.Errorf("storage-dsn must not be empty")
+	}
+
+	if _, err := detectStorageBackend(cfg.StorageDSN); err != nil {
+		return appConfig{}, fmt.Errorf("storage-dsn: %w", err)
 	}
 
 	switch cfg.LogFormat {

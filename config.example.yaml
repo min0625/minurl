@@ -6,11 +6,17 @@
 # Default: ":8888"
 http-addr: ":8888"
 
-# File path for the SQLite database.
-# SQLite is the only backend for now.
-# Future backends may include MySQL / PostgreSQL / DynamoDB.
-# Default: "minurl.sqlite3"
-storage-path: "minurl.sqlite3"
+# Storage DSN.
+# For SQLite: use the sqlite3:// scheme.
+#   sqlite3://minurl.sqlite3              (relative path)
+#   sqlite3://var/data/minurl.sqlite3     (relative subdirectory)
+#   sqlite3:///absolute/path/minurl.db    (absolute path, three slashes)
+#   sqlite3://minurl.sqlite3?cache=shared (with options)
+# For PostgreSQL: use a postgres:// DSN.
+#   postgres://localhost:5432/minurl?sslmode=disable
+# The backend is auto-detected from the DSN scheme.
+# Default: "sqlite3://minurl.sqlite3"
+storage-dsn: "sqlite3://minurl.sqlite3"
 
 # Log output format.
 # Accepted values: "text", "json"

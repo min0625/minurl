@@ -74,8 +74,11 @@ func newRootCommand() *cobra.Command {
 		"",
 		"seed for deterministic ID key derivation (uint32, decimal or 0x hex)",
 	)
-	cmd.PersistentFlags().
-		String("storage-path", "minurl.sqlite3", "file path for the SQLite database")
+	cmd.PersistentFlags().String(
+		"storage-dsn",
+		"sqlite3://minurl.sqlite3",
+		"storage DSN: sqlite3://path for SQLite (default) or postgres://... for PostgreSQL",
+	)
 	cmd.PersistentFlags().String("log-format", "text", "log output format: text or json")
 	cmd.PersistentFlags().Bool("otel-enabled", false, "enable OpenTelemetry tracing")
 	cmd.PersistentFlags().String("otel-service-name", "minurl", "OpenTelemetry service name")
