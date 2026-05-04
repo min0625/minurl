@@ -6,7 +6,9 @@
     // Features to add to the dev container. More info: https://containers.dev/features.
     "features": {
         "ghcr.io/devcontainers-extra/features/mise:1": {},
-        "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+        "ghcr.io/devcontainers/features/python:1": {},
+        "ghcr.io/devcontainers/features/node:2": {}
     },
     "postCreateCommand": "bash .devcontainer/post_create.sh",
     "customizations": {

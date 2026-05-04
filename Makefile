@@ -21,7 +21,7 @@ ifneq ($(filter 1 yes true y on,$(VERBOSE)),)
 GOLANGCI_LINT_FLAGS += -v
 endif
 
-.PHONY: docker-build docker-run fix lint test check-tidy check-openapi check openapi build
+.PHONY: docker-build docker-run fix lint-verify lint test check-tidy check-openapi check openapi build
 
 docker-build:
 	docker build --build-arg LDFLAGS='$(LDFLAGS)' -t $(IMAGE):$(IMAGE_TAG) .
@@ -33,7 +33,10 @@ fix:
 	go mod tidy
 	golangci-lint run $(GOLANGCI_LINT_FLAGS) --fix ./...
 
-lint:
+lint-verify:
+	golangci-lint config verify
+
+lint: lint-verify
 	golangci-lint run $(GOLANGCI_LINT_FLAGS) ./...
 
 test:
