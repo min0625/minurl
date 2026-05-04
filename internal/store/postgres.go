@@ -47,6 +47,10 @@ func openPostgresDB(dsn string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open postgres database: %w", err)
 	}
 
+	// Limit connections to avoid exhausting the Postgres server under load.
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+
 	if err := migratePostgres(context.Background(), db); err != nil {
 		_ = db.Close()
 

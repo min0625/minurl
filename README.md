@@ -10,8 +10,8 @@ Core short URL API is implemented and running:
 - Runtime behavior:
 	- Runs HTTP API server by default on `:8888`
 	- Provides CLI subcommands: `openapi`, `version`
-- Storage backend is SQLite only for now
-- In SQLite mode, both short URL records and `id counter` are persisted
+- Storage backend: SQLite (`sqlite3://`) or PostgreSQL (`postgres://`), selected via `--storage-dsn`
+- Both short URL records and `id counter` are persisted in the configured backend
 - Container build target binary: `minurl`
 
 ## API Documentation
@@ -135,12 +135,14 @@ MINURL_HTTP_ADDR=:9090 MINURL_ID_SEED=12345 MINURL_STORAGE_DSN=sqlite3://minurl.
 PostgreSQL example (env):
 
 ```bash
+# Note: sslmode=disable is for local development only; use sslmode=require (or verify-full) in production.
 MINURL_STORAGE_DSN="postgres://localhost:5432/minurl?sslmode=disable" go run ./cmd/minurl
 ```
 
 PostgreSQL example (flags):
 
 ```bash
+# Note: sslmode=disable is for local development only; use sslmode=require (or verify-full) in production.
 go run ./cmd/minurl --storage-dsn "postgres://localhost:5432/minurl?sslmode=disable"
 ```
 
@@ -302,7 +304,7 @@ then commit updates under `docs/openapi/`.
 4. ✅ Add tests and error handling.
 5. Add redirect endpoint (`GET /{id}` → `302` to original URL).
 6. Add custom alias support.
-7. ✅ Add pluggable database backends (MySQL / PostgreSQL / DynamoDB).
+7. ✅ Add pluggable database backends (PostgreSQL added; MySQL / DynamoDB not yet supported).
 
 ## License
 

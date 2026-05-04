@@ -22,10 +22,9 @@ const (
 //
 //	sqlite3://path  → "sqlite"
 //	postgres://...  → "postgres"
-//	postgresql://...→ "postgres"
 func detectStorageBackend(dsn string) (string, error) {
 	switch {
-	case strings.HasPrefix(dsn, "postgres://"), strings.HasPrefix(dsn, "postgresql://"):
+	case strings.HasPrefix(dsn, "postgres://"):
 		return backendPostgres, nil
 	case strings.HasPrefix(dsn, "sqlite3://"):
 		return backendSQLite, nil
