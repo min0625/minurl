@@ -4,8 +4,6 @@ package service //nolint:testpackage // White-box tests
 
 import (
 	"testing"
-
-	"github.com/bits-and-blooms/bitset"
 )
 
 func TestFeistelCollisionSample(t *testing.T) {
@@ -13,16 +11,18 @@ func TestFeistelCollisionSample(t *testing.T) {
 
 	generator := NewDefaultFeistelIDGenerator()
 
-	// Use bitset to track permuted values. Allocate space for all uint32 values.
-	seen := bitset.New(0)
+	// Track permuted values using a map to avoid memory issues with bitset.
+	// The permuted output is a full uint32 value from the Feistel permutation,
+	// not bounded by sampleSize.
+	seen := make(map[uint32]bool, sampleSize)
 
 	for i := uint32(0); i < sampleSize; i++ {
 		v := generator.permuted(i)
 
-		if seen.Test(uint(v)) {
+		if seen[v] {
 			t.Fatalf("collision detected at sequence %d (permuted value: %d)", i, v)
 		}
 
-		seen.Set(uint(v))
+		seen[v] = true
 	}
 }

@@ -218,6 +218,47 @@ You can also override port mapping:
 make docker-run DOCKER_PORT=9090:8888
 ```
 
+### Deployment with Docker Compose
+
+Example Docker Compose configurations are available in `deploy/docker-compose/`:
+
+- `docker-compose.postgres.example.yml` — PostgreSQL backend with nginx
+- `docker-compose.sqlite.example.yml` — SQLite backend with nginx
+
+#### Setup
+
+1. Copy the example file for your chosen backend:
+
+```bash
+# For PostgreSQL:
+cp deploy/docker-compose/docker-compose.postgres.example.yml deploy/docker-compose/docker-compose.postgres.yml
+
+# For SQLite:
+cp deploy/docker-compose/docker-compose.sqlite.example.yml deploy/docker-compose/docker-compose.sqlite.yml
+```
+
+2. Edit the copied file and customize environment variables:
+   - **PostgreSQL**: Set `POSTGRES_PASSWORD`, `POSTGRES_USER`, and ensure the DSN in `MINURL_STORAGE_DSN` uses appropriate `sslmode` (see notes below)
+   - **SQLite**: Adjust `MINURL_STORAGE_DSN` if needed
+
+3. Start services:
+
+```bash
+# PostgreSQL:
+docker-compose -f deploy/docker-compose/docker-compose.postgres.yml up
+
+# SQLite:
+docker-compose -f deploy/docker-compose/docker-compose.sqlite.yml up
+```
+
+#### Security Notes
+
+- **PostgreSQL credentials**: The examples include default credentials (`minurl:minurl`) for local development. **In production**, replace with secure, randomly generated credentials. Consider using Docker secrets or an external secrets manager.
+- **SSL/TLS for PostgreSQL**:
+  - **Development**: `sslmode=disable` is acceptable for local-only setups.
+  - **Production**: Always use `sslmode=require` or `sslmode=verify-full` to enforce encrypted connections.
+  - The example file includes comments on how to configure this per environment.
+
 ### Export OpenAPI docs
 
 Generate OpenAPI files directly from the app contract (no server startup required):
