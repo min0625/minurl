@@ -10,6 +10,8 @@ OPENAPI_DIR ?= docs/openapi
 BIN_DIR ?= bin
 OUT_BINARY ?= $(BIN_DIR)/minurl
 VERBOSE ?= 0
+# Set INTEGRATION_TEST=1 to also run PostgreSQL integration tests (requires Docker).
+INTEGRATION_TEST ?= 0
 
 GO_TEST_FLAGS := -race -failfast
 ifneq ($(filter 1 yes true y on,$(VERBOSE)),)
@@ -40,7 +42,7 @@ lint: lint-verify
 	golangci-lint run $(GOLANGCI_LINT_FLAGS) ./...
 
 test:
-	go test $(GO_TEST_FLAGS) ./...
+	INTEGRATION_TEST=$(INTEGRATION_TEST) go test $(GO_TEST_FLAGS) ./...
 
 check-tidy:
 	go mod tidy -diff
