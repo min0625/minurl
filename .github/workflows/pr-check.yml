@@ -25,4 +25,4 @@ jobs:
         run: go mod download
 
       - name: Run check
-        run: make check NEW_FROM_REV=origin/${{ github.base_ref }}
+        run: make check NEW_FROM_REV=origin/${{ github.base_ref }} INTEGRATION_TEST=1 VERBOSE=1
