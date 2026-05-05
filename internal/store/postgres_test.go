@@ -2,66 +2,80 @@ package store //nolint:testpackage // White-box tests validate internal PostgreS
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/min0625/minurl/internal/model"
-	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
+// testPostgresDSN is set by TestMain when INTEGRATION_TEST=1 and holds the
+// connection string for the single shared PostgreSQL container used by all
+// tests in this package.
+var testPostgresDSN string
+
+// TestMain manages the lifecycle of a single shared PostgreSQL container for
+// all integration tests in this package. Run with:
+//
+//	INTEGRATION_TEST=1 go test ./internal/store/...
+//	make test INTEGRATION_TEST=1
+func TestMain(m *testing.M) {
+	if os.Getenv("INTEGRATION_TEST") != "1" {
+		os.Exit(m.Run())
+	}
+
+	ctx := context.Background()
+
+	ctr, err := postgres.Run(
+		ctx,
+		"postgres:17-alpine",
+		postgres.WithDatabase("testdb"),
+		postgres.WithUsername("testuser"),
+		postgres.WithPassword("testpass"),
+		postgres.BasicWaitStrategies(),
+	)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: start postgres container: %v\n", err)
+		os.Exit(1)
+	}
+
+	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "FATAL: get postgres connection string: %v\n", err)
+
+		_ = ctr.Terminate(ctx)
+
+		os.Exit(1)
+	}
+
+	testPostgresDSN = dsn
+	code := m.Run()
+	_ = ctr.Terminate(ctx)
+
+	os.Exit(code)
+}
+
 // skipIfNoIntegration skips the test unless the INTEGRATION_TEST environment
-// variable is set to "1". This allows running integration tests in CI and via explicit
-// go.mod while avoiding Docker dependency in normal `go test ./...` runs.
-// It also skips gracefully when Docker is unavailable (e.g. in some CI envs).
+// variable is set to "1". Run integration tests with:
+//
+//	INTEGRATION_TEST=1 go test ./internal/store/...
+//	make test INTEGRATION_TEST=1
 func skipIfNoIntegration(t *testing.T) {
 	t.Helper()
 
 	if os.Getenv("INTEGRATION_TEST") != "1" {
 		t.Skip("set INTEGRATION_TEST=1 to run PostgreSQL integration tests (requires Docker)")
 	}
-
-	testcontainers.SkipIfProviderIsNotHealthy(t)
-}
-
-// startPostgresContainer starts a postgres:16-alpine container, registers
-// cleanup via t.Cleanup, and returns a DSN suitable for openPostgresDB.
-func startPostgresContainer(t *testing.T) string {
-	t.Helper()
-
-	ctx := context.Background()
-
-	ctr, err := postgres.Run(
-		ctx,
-		"postgres:16-alpine",
-		postgres.WithDatabase("testdb"),
-		postgres.WithUsername("testuser"),
-		postgres.WithPassword("testpass"),
-		postgres.BasicWaitStrategies(),
-	)
-
-	testcontainers.CleanupContainer(t, ctr)
-
-	if err != nil {
-		t.Fatalf("start postgres container: %v", err)
-	}
-
-	dsn, err := ctr.ConnectionString(ctx, "sslmode=disable")
-	if err != nil {
-		t.Fatalf("get postgres connection string: %v", err)
-	}
-
-	return dsn
 }
 
 func TestOpenPostgresDBSetsConnectionPool(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	db, err := openPostgresDB(dsn)
+	db, err := openPostgresDB(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("openPostgresDB() error = %v", err)
 	}
@@ -75,15 +89,35 @@ func TestOpenPostgresDBSetsConnectionPool(t *testing.T) {
 	if got := db.Stats().MaxOpenConnections; got != 25 {
 		t.Fatalf("MaxOpenConnections = %d, want 25", got)
 	}
+
+	// Verify MaxIdleConns=5: acquire 10 connections then release all;
+	// the pool should retain at most 5 idle connections.
+	ctx := context.Background()
+	conns := make([]*sql.Conn, 10)
+
+	for i := range conns {
+		conns[i], err = db.Conn(ctx)
+		if err != nil {
+			t.Fatalf("db.Conn()[%d] error = %v", i, err)
+		}
+	}
+
+	for _, c := range conns {
+		if closeErr := c.Close(); closeErr != nil {
+			t.Fatalf("close conn: %v", closeErr)
+		}
+	}
+
+	if got := db.Stats().Idle; got > 5 {
+		t.Fatalf("Idle = %d, want <= 5 (MaxIdleConns=5)", got)
+	}
 }
 
 func TestPostgresShortURLStorageCreateIfAbsent(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	storage, _, closer, err := NewPostgresBackends(dsn)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -114,9 +148,7 @@ func TestPostgresShortURLStorageCreateIfAbsentConflict(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	storage, _, closer, err := NewPostgresBackends(dsn)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -157,9 +189,7 @@ func TestPostgresShortURLStorageGetByID(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	storage, _, closer, err := NewPostgresBackends(dsn)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -206,9 +236,7 @@ func TestPostgresShortURLStorageGetByIDNotFound(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	storage, _, closer, err := NewPostgresBackends(dsn)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -230,12 +258,9 @@ func TestPostgresShortURLStorageGetByIDNotFound(t *testing.T) {
 }
 
 func TestPostgresShortURLCounterNext(t *testing.T) {
-	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	_, counter, closer, err := NewPostgresBackends(dsn)
+	_, counter, closer, err := NewPostgresBackends(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -248,17 +273,29 @@ func TestPostgresShortURLCounterNext(t *testing.T) {
 
 	ctx := context.Background()
 
-	for i := range uint32(3) {
-		want := i + 1
+	// Verify the counter returns monotonically increasing values (+1 each call).
+	// Do not assert the exact starting value because the shared container's
+	// counter table may already hold rows from other tests in this package.
+	prev, err := counter.Next(ctx)
+	if err != nil {
+		t.Fatalf("Next() call 1 error = %v", err)
+	}
 
+	if prev == 0 {
+		t.Fatalf("Next() call 1 = 0, want > 0")
+	}
+
+	for call := range uint32(2) {
 		got, err := counter.Next(ctx)
 		if err != nil {
-			t.Fatalf("Next() call %d error = %v", i+1, err)
+			t.Fatalf("Next() call %d error = %v", call+2, err)
 		}
 
-		if got != want {
-			t.Fatalf("Next() call %d = %d, want %d", i+1, got, want)
+		if got != prev+1 {
+			t.Fatalf("Next() call %d = %d, want %d (prev+1)", call+2, got, prev+1)
 		}
+
+		prev = got
 	}
 }
 
@@ -266,9 +303,7 @@ func TestNewPostgresBackends(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	dsn := startPostgresContainer(t)
-
-	storage, counter, closer, err := NewPostgresBackends(dsn)
+	storage, counter, closer, err := NewPostgresBackends(testPostgresDSN)
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -296,12 +331,14 @@ func TestNewPostgresBackends(t *testing.T) {
 		t.Fatalf("CreateIfAbsent() = false, want true")
 	}
 
+	// Verify the counter is functional; do not assert the exact value because
+	// the shared container may have had prior counter increments.
 	n, err := counter.Next(ctx)
 	if err != nil {
 		t.Fatalf("counter.Next() error = %v", err)
 	}
 
-	if n != 1 {
-		t.Fatalf("counter.Next() = %d, want 1", n)
+	if n == 0 {
+		t.Fatalf("counter.Next() = 0, want > 0")
 	}
 }

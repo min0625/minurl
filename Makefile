@@ -10,6 +10,7 @@ OPENAPI_DIR ?= docs/openapi
 BIN_DIR ?= bin
 OUT_BINARY ?= $(BIN_DIR)/minurl
 VERBOSE ?= 0
+# Set INTEGRATION_TEST=1 to also run PostgreSQL integration tests (requires Docker).
 INTEGRATION_TEST ?= 0
 
 GO_TEST_FLAGS := -race -failfast
