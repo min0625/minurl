@@ -24,6 +24,7 @@ func buildBaseRouter() *chi.Mux {
 	r.Use(panicRecoveryMiddleware)
 	r.Use(requestLoggerMiddleware)
 	r.Use(accessLogMiddleware)
+	r.Use(requestDecompressMiddleware)
 
 	return r
 }
@@ -41,7 +42,9 @@ func buildAPI(svc handler.ShortURLService) (*chi.Mux, huma.API) {
 // buildOpenAPIRouter creates a chi router suitable for OpenAPI schema generation without runtime services.
 func buildOpenAPIRouter() (*chi.Mux, huma.API) {
 	r := buildBaseRouter()
-	api := humachi.New(r, huma.DefaultConfig("MinURL API", version))
+	cfg := huma.DefaultConfig("MinURL API", version)
+	cfg.Servers = []*huma.Server{{URL: "http://localhost:8888"}}
+	api := humachi.New(r, cfg)
 	handler.RegisterOpenAPI(api)
 
 	return r, api

@@ -4,8 +4,7 @@ Guidance for coding agents working in this repository.
 
 ## Purpose
 
-This repository is a Go project intended to become a short URL service.
-Current runtime provides a Cobra-based CLI entrypoint and HTTP server startup via `cmd/minurl/main.go`.
+This repository is a Go short URL service. The core API is fully implemented — it supports creating, fetching, and redirecting short URLs backed by SQLite or PostgreSQL. The runtime provides a Cobra-based CLI entrypoint and HTTP server startup via `cmd/minurl/main.go`.
 
 ## Core Rules
 
@@ -23,6 +22,9 @@ Current runtime provides a Cobra-based CLI entrypoint and HTTP server startup vi
 - Docker output binary: `minurl`
 - Deployment configs: `deploy/docker-compose/` — includes PostgreSQL and SQLite example configurations (`.example.yml` format; copy and customize before use)
 - HTTP listen port: `:8888` (default)
+- Storage backends: SQLite (`sqlite3://`) and PostgreSQL (`postgres://`), auto-detected from DSN scheme
+- Log format: `text` (default) or `json`, controlled via `--log-format` / `MINURL_LOG_FORMAT`
+- OpenTelemetry: opt-in tracing via `--otel-enabled`; supports `stdout` and `otlp` exporters
 - Configuration precedence: CLI flags > env vars > config file > defaults
 
 ## Useful Commands

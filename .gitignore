@@ -43,3 +43,6 @@ bin/
 *.db
 *.sqlite
 *.sqlite3
+
+# Kiota build logs
+*.kiota.log

@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Launch Workspace",
+            "name": "Launch APP",
             "type": "go",
             "request": "launch",
             "mode": "debug",
@@ -15,6 +15,15 @@
                 "--config",
                 "${workspaceFolder}/config.yaml"
             ]
-        }
+        },
+        {
+            "name": "Launch Example Client",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cmd/example-minurl-client",
+            "cwd": "${workspaceFolder}",
+            "args": []
+        },
     ]
 }
