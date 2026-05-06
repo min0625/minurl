@@ -7,6 +7,12 @@ require (
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-playground/validator/v10 v10.30.1
 	github.com/jackc/pgx/v5 v5.9.2
+	github.com/microsoft/kiota-abstractions-go v1.9.4
+	github.com/microsoft/kiota-http-go v1.5.6
+	github.com/microsoft/kiota-serialization-form-go v1.1.3
+	github.com/microsoft/kiota-serialization-json-go v1.1.2
+	github.com/microsoft/kiota-serialization-multipart-go v1.1.2
+	github.com/microsoft/kiota-serialization-text-go v1.1.3
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
@@ -79,6 +85,7 @@ require (
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
+	github.com/std-uritemplate/std-uritemplate/go/v2 v2.0.3 // indirect
 	github.com/stretchr/testify v1.11.1 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/testcontainers/testcontainers-go v0.42.0 // indirect

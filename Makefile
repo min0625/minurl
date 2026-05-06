@@ -7,6 +7,7 @@ DOCKER_VOLUME ?= minurl-data:/data
 DOCKER_PORT ?= 8888:8888
 NEW_FROM_REV ?= HEAD
 OPENAPI_DIR ?= docs/openapi
+KIOTA_DIR ?= pkg/kiota/go/gen/client
 BIN_DIR ?= bin
 OUT_BINARY ?= $(BIN_DIR)/minurl
 VERBOSE ?= 0
@@ -23,44 +24,56 @@ ifneq ($(filter 1 yes true y on,$(VERBOSE)),)
 GOLANGCI_LINT_FLAGS += -v
 endif
 
-.PHONY: docker-build docker-run fix lint-verify lint test check-tidy check-openapi check openapi build
-
+.PHONY: docker-build
 docker-build:
 	docker build --build-arg LDFLAGS='$(LDFLAGS)' -t $(IMAGE):$(IMAGE_TAG) .
 
+.PHONY: docker-run
 docker-run:
 	docker run --rm -p $(DOCKER_PORT) -v $(DOCKER_VOLUME) $(IMAGE):$(IMAGE_TAG)
 
+.PHONY: fix
 fix:
 	go mod tidy
 	golangci-lint run $(GOLANGCI_LINT_FLAGS) --fix ./...
 
+.PHONY: lint-verify
 lint-verify:
 	golangci-lint config verify
 
+.PHONY: lint
 lint: lint-verify
 	golangci-lint run $(GOLANGCI_LINT_FLAGS) ./...
 
+.PHONY: test
 test:
 	INTEGRATION_TEST=$(INTEGRATION_TEST) go test $(GO_TEST_FLAGS) ./...
 
+.PHONY: check-tidy
 check-tidy:
 	go mod tidy -diff
 
-check-openapi:
-	@tmp_dir=$$(mktemp -d); \
-	trap 'rm -rf "$$tmp_dir"' EXIT; \
-	$(MAKE) openapi OPENAPI_DIR=$$tmp_dir >/dev/null; \
-	cmp -s $(OPENAPI_DIR)/openapi.json $$tmp_dir/openapi.json && \
-	cmp -s $(OPENAPI_DIR)/openapi.yaml $$tmp_dir/openapi.yaml && \
-	echo "OpenAPI docs are up to date." || \
-	(echo "OpenAPI docs are out of date. Run 'make openapi' and commit updated files." && exit 1)
+.PHONY: check
+check: check-tidy lint test
 
-check: check-tidy lint test check-openapi
+.PHONY: ci
+ci: check gen
+	git diff --exit-code
 
-build:
-	@mkdir -p $(BIN_DIR)
-	go build -o $(OUT_BINARY) -ldflags '$(LDFLAGS)' ./cmd/minurl
+.PHONY: gen
+gen: openapi kiota
 
+.PHONY: openapi
 openapi:
 	go run ./cmd/minurl openapi --out $(OPENAPI_DIR)
+
+.PHONY: kiota
+kiota: openapi
+	kiota generate \
+		--language Go \
+		--openapi $(OPENAPI_DIR)/openapi.json \
+		--clean-output \
+		--output $(KIOTA_DIR) \
+		--class-name MinURLClient \
+		--namespace-name github.com/min0625/minurl/$(KIOTA_DIR) \
+		--exclude-backward-compatible

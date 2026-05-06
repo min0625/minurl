@@ -40,5 +40,5 @@ jobs:
       - name: Download Go dependencies
         run: go mod download
 
-      - name: Run check
-        run: make check NEW_FROM_REV=origin/${{ github.base_ref }} INTEGRATION_TEST=1 VERBOSE=1
+      - name: Run ci check
+        run: make ci NEW_FROM_REV=origin/${{ github.base_ref }} INTEGRATION_TEST=1 VERBOSE=1

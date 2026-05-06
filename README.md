@@ -105,8 +105,14 @@ Global options:
 
 - `--config`: path to a configuration file (applies to all commands)
 - `--http-addr`: HTTP listen address (default `:8888`)
-- `--id-seed`: deterministic seed for ID key derivation (uint32, empty means built-in default seed)
+- `--id-seed`: deterministic seed for ID key derivation (uint32, decimal or 0x hex; empty means built-in default seed)
 - `--storage-dsn`: storage DSN; `sqlite3://path` for SQLite (default `sqlite3://minurl.sqlite3`) or `postgres://...` for PostgreSQL
+- `--log-format`: log output format — `text` (default) or `json`
+- `--otel-enabled`: enable OpenTelemetry tracing (default `false`)
+- `--otel-service-name`: OpenTelemetry service name (default `minurl`)
+- `--otel-exporter`: OpenTelemetry exporter — `stdout` (default) or `otlp`
+- `--otel-endpoint`: OTLP collector endpoint (required when `--otel-exporter=otlp`)
+- `--otel-insecure`: allow insecure OTLP connection (default `true`)
 
 Configuration precedence is:
 
@@ -125,6 +131,12 @@ Environment variable names:
 - `MINURL_HTTP_ADDR`
 - `MINURL_ID_SEED`
 - `MINURL_STORAGE_DSN`
+- `MINURL_LOG_FORMAT`
+- `MINURL_OTEL_ENABLED`
+- `MINURL_OTEL_SERVICE_NAME`
+- `MINURL_OTEL_EXPORTER`
+- `MINURL_OTEL_ENDPOINT`
+- `MINURL_OTEL_INSECURE`
 
 Example (env):
 
@@ -149,7 +161,7 @@ go run ./cmd/minurl --storage-dsn "postgres://localhost:5432/minurl?sslmode=disa
 Example (flags):
 
 ```bash
-go run ./cmd/minurl --http-addr :9090 --id-seed 12345 --storage-path ./data/minurl.sqlite3
+go run ./cmd/minurl --http-addr :9090 --id-seed 12345 --storage-dsn sqlite3://./data/minurl.sqlite3
 ```
 
 Create a local config from the example:
@@ -164,6 +176,12 @@ Then edit `config.yaml` as needed, for example:
 http-addr: ":9090"
 storage-dsn: "sqlite3://./data/minurl.sqlite3"
 id-seed: "12345"
+log-format: "json"
+otel-enabled: false
+otel-service-name: "minurl"
+otel-exporter: "stdout"
+otel-endpoint: ""
+otel-insecure: true
 ```
 
 Then run:
@@ -259,6 +277,36 @@ docker-compose -f deploy/docker-compose/docker-compose.sqlite.yml up
   - **Production**: Always use `sslmode=require` or `sslmode=verify-full` to enforce encrypted connections.
   - The example file includes comments on how to configure this per environment.
 
+### Observability (OpenTelemetry)
+
+The server supports OpenTelemetry distributed tracing. It is disabled by default.
+
+Enable with stdout exporter (prints traces to stdout):
+
+```bash
+MINURL_OTEL_ENABLED=true go run ./cmd/minurl
+```
+
+Enable with OTLP exporter (e.g. sending to a local Jaeger collector):
+
+```bash
+MINURL_OTEL_ENABLED=true \
+MINURL_OTEL_EXPORTER=otlp \
+MINURL_OTEL_ENDPOINT=localhost:4317 \
+MINURL_OTEL_INSECURE=true \
+go run ./cmd/minurl
+```
+
+Or via flags:
+
+```bash
+go run ./cmd/minurl \
+  --otel-enabled \
+  --otel-exporter otlp \
+  --otel-endpoint localhost:4317 \
+  --otel-insecure
+```
+
 ### Export OpenAPI docs
 
 Generate OpenAPI files directly from the app contract (no server startup required):
@@ -315,26 +363,57 @@ then commit updates under `docs/openapi/`.
 ```text
 .
 |-- cmd/
-|   `-- minurl/
+|   |-- example-minurl-client/  # Example Kiota-generated Go client usage
+|   |   `-- main.go
+|   `-- minurl/                 # Main entry point and wiring
 |       |-- main.go
-|       `-- main_test.go
+|       |-- config.go           # Configuration loading (Viper)
+|       |-- config_bind.go      # Flag/env binding helpers
+|       |-- middleware.go       # HTTP middleware (logging, recovery, decompression)
+|       |-- server.go           # HTTP server startup and routing
+|       |-- service_factory.go  # Storage backend detection and service wiring
+|       |-- telemetry.go        # OpenTelemetry initialization
+|       |-- command_openapi.go  # `openapi` subcommand
+|       `-- command_version.go  # `version` subcommand
 |-- docs/
+|   |-- http/
+|   |   `-- minurl.http         # REST Client debug request examples
 |   `-- openapi/
 |       |-- openapi.json
 |       `-- openapi.yaml
 |-- internal/
-|   |-- handler/          # HTTP route handlers
+|   |-- handler/                # HTTP route handlers
 |   |   |-- short_url.go
 |   |   `-- short_url_test.go
-|   |-- service/          # Business logic
+|   |-- service/                # Business logic
 |   |   |-- short_url.go
-|   |   `-- short_url_test.go
-|   `-- model/            # Domain types
-|       `-- short_url.go
+|   |   |-- short_url_test.go
+|   |   |-- id_generator.go
+|   |   |-- id_generator_test.go
+|   |   `-- id_counter.go
+|   |-- store/                  # Persistence (SQLite and PostgreSQL)
+|   |   |-- sqlite.go
+|   |   |-- sqlite_test.go
+|   |   |-- postgres.go
+|   |   |-- postgres_test.go
+|   |   |-- storage.go
+|   |   `-- counter.go
+|   |-- model/                  # Domain types
+|   |   `-- short_url.go
+|   `-- testhelpers/            # Shared test utilities
+|       |-- helpers.go
+|       |-- counter.go
+|       |-- id_generator.go
+|       `-- storage.go
+|-- pkg/
+|   `-- kiota/go/gen/           # Kiota-generated API client
+|-- deploy/
+|   `-- docker-compose/         # Deployment examples (PostgreSQL and SQLite)
 |-- go.mod
 |-- Dockerfile
 |-- Makefile
-|-- LICENSE
+|-- config.example.yaml
+`-- LICENSE
 ```
 
 ## Next Suggested Milestones
@@ -343,9 +422,10 @@ then commit updates under `docs/openapi/`.
 2. ✅ Add HTTP server and routing.
 3. ✅ Implement create and get short URL endpoints.
 4. ✅ Add tests and error handling.
-5. Add redirect endpoint (`GET /{id}` → `302` to original URL).
-6. Add custom alias support.
-7. ✅ Add pluggable database backends (PostgreSQL added; MySQL / DynamoDB not yet supported).
+5. ✅ Add redirect endpoint (`GET /api/v1/urls/{id}:redirect` → `302` to original URL).
+6. ✅ Add custom alias support (optional `id` field on create).
+7. ✅ Add pluggable database backends (SQLite and PostgreSQL).
+8. ✅ Add OpenTelemetry tracing (stdout and OTLP exporters).
 
 ## License
 

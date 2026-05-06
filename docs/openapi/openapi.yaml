@@ -18,7 +18,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/schemas/ErrorModel.json
+            - http://localhost:8888/schemas/ErrorModel.json
           format: uri
           readOnly: true
           type: string
@@ -65,7 +65,7 @@ components:
         $schema:
           description: A URL to the JSON Schema for this object.
           examples:
-            - https://example.com/schemas/ShortURL.json
+            - http://localhost:8888/schemas/ShortURL.json
           format: uri
           readOnly: true
           type: string
@@ -168,3 +168,5 @@ paths:
       summary: Redirect to original URL
       tags:
         - ShortURL
+servers:
+  - url: http://localhost:8888

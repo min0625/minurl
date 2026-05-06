@@ -3,12 +3,15 @@
 package main
 
 import (
+	"compress/gzip"
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/trace"
@@ -89,6 +92,49 @@ func loggerAttrsFromContext(ctx context.Context) []slog.Attr {
 	}
 
 	return nil
+}
+
+// requestDecompressMiddleware decompresses request bodies that use
+// Content-Encoding: gzip, allowing clients to send compressed payloads.
+// Unsupported encoding values result in a 415 Unsupported Media Type response.
+func requestDecompressMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		encoding := strings.TrimSpace(r.Header.Get("Content-Encoding"))
+		if encoding == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		if !strings.EqualFold(encoding, "gzip") {
+			http.Error(
+				w,
+				http.StatusText(http.StatusUnsupportedMediaType),
+				http.StatusUnsupportedMediaType,
+			)
+
+			return
+		}
+
+		gr, err := gzip.NewReader(r.Body)
+		if err != nil {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+
+		defer func() {
+			if closeErr := gr.Close(); closeErr != nil {
+				slog.WarnContext(r.Context(), "closing gzip reader", "error", closeErr)
+			}
+		}()
+
+		r2 := r.Clone(r.Context())
+		r2.Body = io.NopCloser(gr)
+		r2.ContentLength = -1
+		r2.Header.Del("Content-Encoding")
+		r2.Header.Del("Content-Length")
+
+		next.ServeHTTP(w, r2)
+	})
 }
 
 func panicRecoveryMiddleware(next http.Handler) http.Handler {
