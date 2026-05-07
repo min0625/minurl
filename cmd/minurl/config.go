@@ -7,15 +7,14 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/min0625/minurl/internal/telemetry"
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 )
 
 const (
-	logFormatText      = "text"
-	logFormatJSON      = "json"
-	otelExporterStdout = "stdout"
-	otelExporterOTLP   = "otlp"
+	logFormatText = "text"
+	logFormatJSON = "json"
 )
 
 // configKeys lists all configuration keys that should be bound from flags and environment variables.
@@ -50,7 +49,7 @@ func defaultAppConfig() appConfig {
 		LogFormat:       logFormatText,
 		OTELEnabled:     false,
 		OTELServiceName: "minurl",
-		OTELExporter:    otelExporterStdout,
+		OTELExporter:    telemetry.ExporterStdout,
 		OTELEndpoint:    "",
 		OTELInsecure:    true,
 	}
@@ -131,16 +130,16 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 	if cfg.OTELEnabled {
 		switch cfg.OTELExporter {
-		case otelExporterStdout, otelExporterOTLP:
-			if cfg.OTELExporter == otelExporterOTLP && cfg.OTELEndpoint == "" {
+		case telemetry.ExporterStdout, telemetry.ExporterOTLP:
+			if cfg.OTELExporter == telemetry.ExporterOTLP && cfg.OTELEndpoint == "" {
 				return appConfig{}, fmt.Errorf("otel.endpoint must be set when otel.exporter=otlp")
 			}
 		default:
 			return appConfig{}, fmt.Errorf(
 				"invalid otel.exporter %q: expected %s or %s",
 				cfg.OTELExporter,
-				otelExporterStdout,
-				otelExporterOTLP,
+				telemetry.ExporterStdout,
+				telemetry.ExporterOTLP,
 			)
 		}
 	}

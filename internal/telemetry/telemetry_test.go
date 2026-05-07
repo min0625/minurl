@@ -1,4 +1,4 @@
-package main
+package telemetry_test
 
 import (
 	"context"
@@ -6,13 +6,14 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/min0625/minurl/internal/telemetry"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 )
 
-func TestWrapHTTPHandlerWithTelemetryNamesSpanByMethodAndPath(t *testing.T) {
+func TestWrapHTTPHandlerNamesSpanByMethodAndPath(t *testing.T) {
 	spanRecorder := tracetest.NewSpanRecorder()
 	tp := sdktrace.NewTracerProvider()
 	tp.RegisterSpanProcessor(spanRecorder)
@@ -32,11 +33,13 @@ func TestWrapHTTPHandlerWithTelemetryNamesSpanByMethodAndPath(t *testing.T) {
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 
-	h := wrapHTTPHandlerWithTelemetry(
+	cfg := telemetry.Config{Enabled: true, ServiceName: "minurl"}
+
+	h := telemetry.WrapHTTPHandler(
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}),
-		appConfig{OTELEnabled: true, OTELServiceName: "minurl"},
+		cfg,
 	)
 
 	req := httptest.NewRequestWithContext(
