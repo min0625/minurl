@@ -12,7 +12,7 @@ import (
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // register pgx driver
-	"github.com/min0625/minurl/internal/model"
+	"github.com/min0625/minurl/internal/service"
 )
 
 // postgresDBCloser wraps a shared sql.DB and closes it on Close.
@@ -91,7 +91,7 @@ type PostgresShortURLStorage struct {
 // Returns true if the row was inserted, false if it already existed.
 func (s *PostgresShortURLStorage) CreateIfAbsent(
 	ctx context.Context,
-	entry model.ShortURL,
+	entry service.ShortURL,
 ) (bool, error) {
 	result, err := s.db.ExecContext(
 		ctx,
@@ -119,9 +119,9 @@ func (s *PostgresShortURLStorage) CreateIfAbsent(
 func (s *PostgresShortURLStorage) GetByID(
 	ctx context.Context,
 	id string,
-) (model.ShortURL, bool, error) {
+) (service.ShortURL, bool, error) {
 	var (
-		entry      model.ShortURL
+		entry      service.ShortURL
 		createTime time.Time
 	)
 
@@ -132,11 +132,11 @@ func (s *PostgresShortURLStorage) GetByID(
 	).Scan(&entry.ID, &entry.OriginalURL, &createTime)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return model.ShortURL{}, false, nil
+		return service.ShortURL{}, false, nil
 	}
 
 	if err != nil {
-		return model.ShortURL{}, false, fmt.Errorf("get short url: %w", err)
+		return service.ShortURL{}, false, fmt.Errorf("get short url: %w", err)
 	}
 
 	entry.CreateTime = createTime.UTC()

@@ -14,7 +14,6 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
-	"github.com/min0625/minurl/internal/model"
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/testhelpers"
 )
@@ -142,7 +141,7 @@ func TestRegisterRedirectRouteRedirectsToOriginalURL(t *testing.T) {
 
 	// Create a short URL in storage
 	originalURL := "https://example.com/very/long/url"
-	entry := model.ShortURL{
+	entry := service.ShortURL{
 		ID:          "abc123",
 		OriginalURL: originalURL,
 	}

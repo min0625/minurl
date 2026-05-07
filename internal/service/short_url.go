@@ -7,16 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
-
-	"github.com/min0625/minurl/internal/model"
-)
-
-const (
-	// maxShortURLIDLen is the maximum allowed length for short URL identifiers.
-	// This limits the short ID to 10 characters in Base58 encoding.
-	maxShortURLIDLen = 10
 )
 
 // ShortURLService manages short URL resources using pluggable storage and counters.
@@ -65,8 +56,8 @@ func NewShortURLServiceWithAllDependencies(
 // This loop will eventually succeed unless the counter encounters an error.
 func (s *ShortURLService) Create(
 	ctx context.Context,
-	entry model.ShortURL,
-) (*model.ShortURL, error) {
+	entry ShortURL,
+) (*ShortURL, error) {
 	if entry.ID != "" {
 		entry.CreateTime = time.Now().UTC()
 
@@ -107,31 +98,8 @@ func (s *ShortURLService) Create(
 	}
 }
 
-func validateShortURLID(id string) error {
-	if id == "" {
-		return errors.New("id is required")
-	}
-
-	if len(id) > maxShortURLIDLen {
-		return errors.New("id is too long")
-	}
-
-	for _, ch := range id {
-		if !strings.ContainsRune(base58Alphabet, ch) {
-			return errors.New("id contains invalid characters")
-		}
-	}
-
-	return nil
-}
-
-// IsValidShortURLID returns nil when id conforms to allowed short URL identifier rules, otherwise returns an error.
-func IsValidShortURLID(id string) error {
-	return validateShortURLID(id)
-}
-
 // Get retrieves a short URL by ID.
-func (s *ShortURLService) Get(ctx context.Context, id string) (*model.ShortURL, bool, error) {
+func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, bool, error) {
 	entry, ok, err := s.store.GetByID(ctx, id)
 	if err != nil {
 		return nil, false, fmt.Errorf("get short url from store: %w", err)

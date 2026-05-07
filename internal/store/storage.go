@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/min0625/minurl/internal/model"
+	"github.com/min0625/minurl/internal/service"
 )
 
 // SQLiteShortURLStorage is a SQLite-backed storage implementation.
@@ -21,7 +21,7 @@ type SQLiteShortURLStorage struct {
 // Returns true if the entry was inserted, false if it already existed.
 func (s *SQLiteShortURLStorage) CreateIfAbsent(
 	ctx context.Context,
-	entry model.ShortURL,
+	entry service.ShortURL,
 ) (bool, error) {
 	result, err := s.db.ExecContext(
 		ctx,
@@ -46,8 +46,8 @@ func (s *SQLiteShortURLStorage) CreateIfAbsent(
 func (s *SQLiteShortURLStorage) GetByID(
 	ctx context.Context,
 	id string,
-) (model.ShortURL, bool, error) {
-	var entry model.ShortURL
+) (service.ShortURL, bool, error) {
+	var entry service.ShortURL
 
 	var createTimeStr string
 
@@ -58,16 +58,16 @@ func (s *SQLiteShortURLStorage) GetByID(
 	).Scan(&entry.ID, &entry.OriginalURL, &createTimeStr)
 
 	if errors.Is(err, sql.ErrNoRows) {
-		return model.ShortURL{}, false, nil
+		return service.ShortURL{}, false, nil
 	}
 
 	if err != nil {
-		return model.ShortURL{}, false, fmt.Errorf("query short url: %w", err)
+		return service.ShortURL{}, false, fmt.Errorf("query short url: %w", err)
 	}
 
 	entry.CreateTime, err = time.Parse(time.RFC3339Nano, createTimeStr)
 	if err != nil {
-		return model.ShortURL{}, false, fmt.Errorf("parse create_time %q: %w", createTimeStr, err)
+		return service.ShortURL{}, false, fmt.Errorf("parse create_time %q: %w", createTimeStr, err)
 	}
 
 	return entry, true, nil

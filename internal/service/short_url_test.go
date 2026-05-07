@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/min0625/minurl/internal/model"
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/testhelpers"
 )
@@ -20,7 +19,7 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 
 	entry, err := svc.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/path"},
+		service.ShortURL{OriginalURL: "https://example.org/path"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -70,7 +69,7 @@ func TestShortURLServiceCreateWithCustomID(t *testing.T) {
 
 	entry, err := svc.Create(
 		context.Background(),
-		model.ShortURL{ID: "custom123", OriginalURL: "https://example.org/custom"},
+		service.ShortURL{ID: "custom123", OriginalURL: "https://example.org/custom"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -90,7 +89,7 @@ func TestShortURLServiceCreateWithCustomID(t *testing.T) {
 
 	if _, err := svc.Create(
 		context.Background(),
-		model.ShortURL{ID: "custom123", OriginalURL: "https://example.org/duplicate"},
+		service.ShortURL{ID: "custom123", OriginalURL: "https://example.org/duplicate"},
 	); err == nil {
 		t.Fatal("Create() error = nil, want ErrShortURLIDConflict")
 	} else if !errors.Is(err, service.ErrShortURLIDConflict) {
@@ -105,7 +104,7 @@ func TestShortURLServiceGetReturnsCopy(t *testing.T) {
 
 	entry, err := svc.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/original"},
+		service.ShortURL{OriginalURL: "https://example.org/original"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -149,7 +148,7 @@ func TestShortURLServiceCreateGeneratesUniqueBase58IDs(t *testing.T) {
 	for i := 0; i < 2000; i++ {
 		entry, err := svc.Create(
 			context.Background(),
-			model.ShortURL{OriginalURL: "https://example.org/batch"},
+			service.ShortURL{OriginalURL: "https://example.org/batch"},
 		)
 		if err != nil {
 			t.Fatalf("Create() error at iteration %d: %v", i, err)
@@ -216,7 +215,7 @@ func TestShortURLServiceWithCustomStorage(t *testing.T) {
 
 	entry, err := svc.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/custom-store"},
+		service.ShortURL{OriginalURL: "https://example.org/custom-store"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -236,7 +235,7 @@ func TestShortURLServiceCreateHonorsCanceledContext(t *testing.T) {
 
 	if _, err := svc.Create(
 		ctx,
-		model.ShortURL{OriginalURL: "https://example.org/canceled"},
+		service.ShortURL{OriginalURL: "https://example.org/canceled"},
 	); err == nil {
 		t.Fatal("Create() error = nil, want context canceled error")
 	} else if !errors.Is(err, context.Canceled) {
@@ -286,7 +285,7 @@ func TestShortURLServiceUsesInjectedIDGenerator(t *testing.T) {
 
 	entry, err := svc.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/injected"},
+		service.ShortURL{OriginalURL: "https://example.org/injected"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)

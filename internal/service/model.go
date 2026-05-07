@@ -1,7 +1,6 @@
 // Copyright 2024 The MinURL Authors
 
-// Package model defines the domain types for the MinURL service.
-package model
+package service
 
 import "time"
 

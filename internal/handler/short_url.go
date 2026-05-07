@@ -10,7 +10,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-playground/validator/v10"
-	"github.com/min0625/minurl/internal/model"
 	"github.com/min0625/minurl/internal/service"
 )
 
@@ -18,9 +17,7 @@ var requestValidator = newRequestValidator()
 
 func newRequestValidator() *validator.Validate {
 	v := validator.New()
-	if err := v.RegisterValidation("shortid", func(fl validator.FieldLevel) bool {
-		return service.IsValidShortURLID(fl.Field().String()) == nil
-	}); err != nil {
+	if err := service.RegisterValidations(v); err != nil {
 		panic(err)
 	}
 
@@ -35,17 +32,8 @@ func validateRequest(req any, msg string) []error {
 	return nil
 }
 
-// ShortURLService defines the minimal behavior required by HTTP handlers.
-// Note: This interface is defined locally (rather than imported from service package)
-// to allow the handler to evolve independently and define only the operations it needs.
-// This pattern supports loose coupling between the HTTP layer and service layer.
-type ShortURLService interface {
-	Create(ctx context.Context, entry model.ShortURL) (*model.ShortURL, error)
-	Get(ctx context.Context, id string) (*model.ShortURL, bool, error)
-}
-
 type createShortURLInput struct {
-	Body model.ShortURL `validate:"required"`
+	Body service.ShortURL `validate:"required"`
 }
 
 var _ huma.Resolver = (*createShortURLInput)(nil)
@@ -55,7 +43,7 @@ func (in *createShortURLInput) Resolve(huma.Context) []error {
 }
 
 type shortURLOutput struct {
-	Body model.ShortURL
+	Body service.ShortURL
 }
 
 type getShortURLInput struct {
@@ -110,7 +98,7 @@ var redirectShortURLOperation = huma.Operation{
 
 // registerCreateShortURLRoute registers the create short URL endpoint on the given API.
 // The handler implements the full business logic using the provided service.
-func registerCreateShortURLRoute(api huma.API, svc ShortURLService) {
+func registerCreateShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 	huma.Register(
 		api,
 		createShortURLOperation,
@@ -131,7 +119,7 @@ func registerCreateShortURLRoute(api huma.API, svc ShortURLService) {
 
 // registerGetShortURLRoute registers the get short URL endpoint on the given API.
 // The handler implements the full business logic using the provided service.
-func registerGetShortURLRoute(api huma.API, svc ShortURLService) {
+func registerGetShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 	huma.Register(
 		api,
 		getShortURLOperation,
@@ -152,7 +140,7 @@ func registerGetShortURLRoute(api huma.API, svc ShortURLService) {
 
 // registerRedirectRoute registers the redirect endpoint on the given Huma API.
 // The handler retrieves a short URL and performs an HTTP 302 redirect to the original URL.
-func registerRedirectRoute(api huma.API, svc ShortURLService) {
+func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 	huma.Register(
 		api,
 		redirectShortURLOperation,
@@ -175,7 +163,7 @@ func registerRedirectRoute(api huma.API, svc ShortURLService) {
 }
 
 // Register registers all short URL routes onto the given API with the provided service.
-func Register(api huma.API, svc ShortURLService) {
+func Register(api huma.API, svc service.ShortURLServicer) {
 	registerCreateShortURLRoute(api, svc)
 	registerGetShortURLRoute(api, svc)
 	registerRedirectRoute(api, svc)
