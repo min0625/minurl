@@ -1,4 +1,4 @@
-package main
+package middleware_test
 
 import (
 	"bytes"
@@ -10,6 +10,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/min0625/minurl/internal/middleware"
 )
 
 func TestAccessLogMiddlewareDefaultsStatusOK(t *testing.T) {
@@ -23,7 +25,7 @@ func TestAccessLogMiddlewareDefaultsStatusOK(t *testing.T) {
 
 	slog.SetDefault(slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{})))
 
-	h := accessLogMiddleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := middleware.AccessLog(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/health", nil)
 	res := httptest.NewRecorder()
 
@@ -102,7 +104,7 @@ func TestRequestDecompressMiddleware(t *testing.T) {
 				gotBody = string(b)
 			})
 
-			h := requestDecompressMiddleware(inner)
+			h := middleware.RequestDecompress(inner)
 
 			req := httptest.NewRequestWithContext(
 				context.Background(),

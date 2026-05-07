@@ -1,6 +1,7 @@
 // Copyright 2024 The MinURL Authors
 
-package main
+// Package telemetry provides OpenTelemetry initialization and HTTP handler wrapping.
+package telemetry
 
 import (
 	"context"
@@ -18,10 +19,29 @@ import (
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
 
-func initOpenTelemetry(ctx context.Context, cfg appConfig) (func(context.Context) error, error) {
-	if !cfg.OTELEnabled {
-		noopShutdown := func(context.Context) error { return nil }
-		return noopShutdown, nil
+const (
+	// ExporterStdout writes traces to stdout in a human-readable format.
+	ExporterStdout = "stdout"
+	// ExporterOTLP ships traces to an OTLP collector over gRPC.
+	ExporterOTLP = "otlp"
+)
+
+// Config holds the OpenTelemetry configuration for the service.
+type Config struct {
+	Enabled     bool
+	ServiceName string
+	Exporter    string // ExporterStdout or ExporterOTLP
+	Endpoint    string
+	Insecure    bool
+	Version     string
+}
+
+// Init sets up a global TracerProvider based on cfg.
+// It returns a shutdown function that must be called on process exit.
+// When cfg.Enabled is false a no-op shutdown function is returned immediately.
+func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) {
+	if !cfg.Enabled {
+		return func(context.Context) error { return nil }, nil
 	}
 
 	var (
@@ -29,23 +49,23 @@ func initOpenTelemetry(ctx context.Context, cfg appConfig) (func(context.Context
 		err error
 	)
 
-	switch cfg.OTELExporter {
-	case otelExporterStdout:
+	switch cfg.Exporter {
+	case ExporterStdout:
 		exp, err = stdouttrace.New(
 			stdouttrace.WithWriter(os.Stdout),
 			stdouttrace.WithPrettyPrint(),
 		)
-	case otelExporterOTLP:
+	case ExporterOTLP:
 		clientOpts := []otlptracegrpc.Option{
-			otlptracegrpc.WithEndpoint(cfg.OTELEndpoint),
+			otlptracegrpc.WithEndpoint(cfg.Endpoint),
 		}
-		if cfg.OTELInsecure {
+		if cfg.Insecure {
 			clientOpts = append(clientOpts, otlptracegrpc.WithInsecure())
 		}
 
 		exp, err = otlptracegrpc.New(ctx, clientOpts...)
 	default:
-		return nil, fmt.Errorf("unsupported otel exporter %q", cfg.OTELExporter)
+		return nil, fmt.Errorf("unsupported otel exporter %q", cfg.Exporter)
 	}
 
 	if err != nil {
@@ -54,8 +74,8 @@ func initOpenTelemetry(ctx context.Context, cfg appConfig) (func(context.Context
 
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
-			attribute.String("service.name", cfg.OTELServiceName),
-			attribute.String("service.version", version),
+			attribute.String("service.name", cfg.ServiceName),
+			attribute.String("service.version", cfg.Version),
 		),
 	)
 	if err != nil {
@@ -66,7 +86,7 @@ func initOpenTelemetry(ctx context.Context, cfg appConfig) (func(context.Context
 		sdktrace.WithResource(res),
 	}
 
-	if cfg.OTELExporter == otelExporterStdout {
+	if cfg.Exporter == ExporterStdout {
 		tracerProviderOpts = append(tracerProviderOpts, sdktrace.WithSyncer(exp))
 	} else {
 		tracerProviderOpts = append(tracerProviderOpts, sdktrace.WithBatcher(exp))
@@ -79,8 +99,10 @@ func initOpenTelemetry(ctx context.Context, cfg appConfig) (func(context.Context
 	return tp.Shutdown, nil
 }
 
-func wrapHTTPHandlerWithTelemetry(h http.Handler, cfg appConfig) http.Handler {
-	if cfg.OTELEnabled {
+// WrapHTTPHandler wraps h with OpenTelemetry instrumentation when cfg.Enabled is true.
+// When disabled the original handler is returned unchanged.
+func WrapHTTPHandler(h http.Handler, cfg Config) http.Handler {
+	if cfg.Enabled {
 		return otelhttp.NewHandler(
 			h,
 			"http.server",

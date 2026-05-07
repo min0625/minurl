@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/min0625/minurl/internal/httpserver"
 	"github.com/spf13/cobra"
 )
 
@@ -42,7 +43,7 @@ func newOpenAPICommand() *cobra.Command {
 }
 
 func runOpenAPICommand(outDir string) (string, error) {
-	_, api := buildOpenAPIRouter()
+	_, api := httpserver.BuildOpenAPIRouter(version)
 
 	spec := api.OpenAPI()
 

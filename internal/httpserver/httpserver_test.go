@@ -1,11 +1,13 @@
-package main
+package httpserver_test
 
 import (
 	"net"
 	"testing"
+
+	"github.com/min0625/minurl/internal/httpserver"
 )
 
-func TestServerListenLogValues(t *testing.T) {
+func TestListenLogValues(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -35,11 +37,10 @@ func TestServerListenLogValues(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			gotBoundAddr, gotDocsURL := serverListenLogValues(tt.addr)
+			gotBoundAddr, gotDocsURL := httpserver.ListenLogValues(tt.addr)
 			if gotBoundAddr != tt.wantBoundAddr {
 				t.Fatalf("bound addr = %q, want %q", gotBoundAddr, tt.wantBoundAddr)
 			}

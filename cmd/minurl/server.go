@@ -12,51 +12,27 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
-	"github.com/go-chi/chi/v5"
-	"github.com/min0625/minurl/internal/handler"
+	"github.com/min0625/minurl/internal/httpserver"
+	"github.com/min0625/minurl/internal/middleware"
+	"github.com/min0625/minurl/internal/telemetry"
 )
 
-// buildBaseRouter creates the chi router with standard middleware applied.
-func buildBaseRouter() *chi.Mux {
-	r := chi.NewRouter()
-	r.Use(panicRecoveryMiddleware)
-	r.Use(requestLoggerMiddleware)
-	r.Use(accessLogMiddleware)
-	r.Use(requestDecompressMiddleware)
-
-	return r
-}
-
-// buildAPI creates a chi router with handlers and returns it along with the Huma API for server runtime.
-func buildAPI(svc handler.ShortURLService) (*chi.Mux, huma.API) {
-	r := buildBaseRouter()
-	api := humachi.New(r, huma.DefaultConfig("MinURL API", version))
-
-	handler.Register(api, svc)
-
-	return r, api
-}
-
-// buildOpenAPIRouter creates a chi router suitable for OpenAPI schema generation without runtime services.
-func buildOpenAPIRouter() (*chi.Mux, huma.API) {
-	r := buildBaseRouter()
-	cfg := huma.DefaultConfig("MinURL API", version)
-	cfg.Servers = []*huma.Server{{URL: "http://localhost:8888"}}
-	api := humachi.New(r, cfg)
-	handler.RegisterOpenAPI(api)
-
-	return r, api
-}
-
 func runServer(cfg appConfig) error {
-	configureDefaultLogger(cfg.LogFormat)
+	middleware.ConfigureDefaultLogger(cfg.LogFormat)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	shutdown, err := initOpenTelemetry(ctx, cfg)
+	otelCfg := telemetry.Config{
+		Enabled:     cfg.OTELEnabled,
+		ServiceName: cfg.OTELServiceName,
+		Exporter:    cfg.OTELExporter,
+		Endpoint:    cfg.OTELEndpoint,
+		Insecure:    cfg.OTELInsecure,
+		Version:     version,
+	}
+
+	shutdown, err := telemetry.Init(ctx, otelCfg)
 	if err != nil {
 		return fmt.Errorf("initialize opentelemetry: %w", err)
 	}
@@ -79,9 +55,9 @@ func runServer(cfg appConfig) error {
 		_ = closer.Close()
 	}()
 
-	r, _ := buildAPI(svc)
+	r, _ := httpserver.BuildAPI(svc, version)
 
-	h := wrapHTTPHandlerWithTelemetry(r, cfg)
+	h := telemetry.WrapHTTPHandler(r, otelCfg)
 
 	server := &http.Server{
 		Addr:              cfg.HTTPAddr,
@@ -97,7 +73,7 @@ func runServer(cfg appConfig) error {
 		return fmt.Errorf("listen on %q: %w", cfg.HTTPAddr, err)
 	}
 
-	boundAddr, docsURL := serverListenLogValues(listener.Addr())
+	boundAddr, docsURL := httpserver.ListenLogValues(listener.Addr())
 
 	listenErrCh := make(chan error, 1)
 
@@ -130,15 +106,4 @@ func runServer(cfg appConfig) error {
 	}
 
 	return nil
-}
-
-func serverListenLogValues(addr net.Addr) (string, string) {
-	boundAddr := addr.String()
-
-	_, port, err := net.SplitHostPort(boundAddr)
-	if err != nil || port == "" {
-		return boundAddr, ""
-	}
-
-	return boundAddr, "http://" + net.JoinHostPort("localhost", port) + "/docs"
 }
