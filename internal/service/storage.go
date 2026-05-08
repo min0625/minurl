@@ -2,14 +2,10 @@
 
 package service
 
-import (
-	"context"
-
-	"github.com/min0625/minurl/internal/model"
-)
+import "context"
 
 // ShortURLStorage describes storage operations required by ShortURLService.
 type ShortURLStorage interface {
-	CreateIfAbsent(ctx context.Context, entry model.ShortURL) (bool, error)
-	GetByID(ctx context.Context, id string) (model.ShortURL, bool, error)
+	CreateIfAbsent(ctx context.Context, entry ShortURL) (bool, error)
+	GetByID(ctx context.Context, id string) (ShortURL, bool, error)
 }

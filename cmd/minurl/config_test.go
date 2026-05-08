@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/min0625/minurl/internal/model"
+	"github.com/min0625/minurl/internal/service"
 )
 
 func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
@@ -210,7 +210,7 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 
 	a, err := svcA.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/a"},
+		service.ShortURL{OriginalURL: "https://example.org/a"},
 	)
 	if err != nil {
 		t.Fatalf("svcA.Create() error = %v", err)
@@ -218,7 +218,7 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 
 	b, err := svcB.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/b"},
+		service.ShortURL{OriginalURL: "https://example.org/b"},
 	)
 	if err != nil {
 		t.Fatalf("svcB.Create() error = %v", err)
@@ -226,7 +226,7 @@ func TestNewShortURLServiceFromConfigUsesConfiguredSeed(t *testing.T) {
 
 	c, err := svcC.Create(
 		context.Background(),
-		model.ShortURL{OriginalURL: "https://example.org/c"},
+		service.ShortURL{OriginalURL: "https://example.org/c"},
 	)
 	if err != nil {
 		t.Fatalf("svcC.Create() error = %v", err)
@@ -268,7 +268,7 @@ func TestNewShortURLServiceFromConfigSQLitePersists(t *testing.T) {
 
 	entry, err := svc.Create(
 		t.Context(),
-		model.ShortURL{OriginalURL: "https://example.com"},
+		service.ShortURL{OriginalURL: "https://example.com"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
@@ -305,7 +305,7 @@ func TestNewShortURLServiceFromConfigSQLitePersists(t *testing.T) {
 
 	entry2, err := svc2.Create(
 		t.Context(),
-		model.ShortURL{OriginalURL: "https://example.org/another"},
+		service.ShortURL{OriginalURL: "https://example.org/another"},
 	)
 	if err != nil {
 		t.Fatalf("Create() second error = %v", err)

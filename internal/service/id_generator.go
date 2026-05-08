@@ -17,9 +17,6 @@ const (
 	// feistelRoundMul is the multiplier used in Feistel round function for diffusion.
 	feistelRoundMul uint32 = 0x45d9f3b
 
-	// base58Alphabet is the standard Base58 alphabet used by Bitcoin, without 0, O, I, l to avoid confusion.
-	base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
-
 	// base58RadixSize is the size of the Base58 alphabet.
 	base58RadixSize = 58
 )
@@ -103,7 +100,7 @@ func feistelRound(half, key uint32) uint32 {
 
 func encodeBase58(value uint32) string {
 	if value == 0 {
-		return string(base58Alphabet[0])
+		return string(Base58Alphabet[0])
 	}
 
 	var buffer [6]byte
@@ -115,7 +112,7 @@ func encodeBase58(value uint32) string {
 		value /= base58RadixSize
 		index--
 
-		buffer[index] = base58Alphabet[int(remainder)]
+		buffer[index] = Base58Alphabet[int(remainder)]
 	}
 
 	return string(buffer[index:])

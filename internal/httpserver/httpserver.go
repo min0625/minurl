@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
 	"github.com/min0625/minurl/internal/middleware"
+	"github.com/min0625/minurl/internal/service"
 )
 
 // NewRouter creates a chi router with the standard middleware stack applied.
@@ -26,7 +27,7 @@ func NewRouter() *chi.Mux {
 
 // BuildAPI creates a chi router with all MinURL handlers registered and returns
 // the router together with the Huma API instance for use at runtime.
-func BuildAPI(svc handler.ShortURLService, version string) (*chi.Mux, huma.API) {
+func BuildAPI(svc service.ShortURLServicer, version string) (*chi.Mux, huma.API) {
 	r := NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("MinURL API", version))
 

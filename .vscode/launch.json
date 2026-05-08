@@ -17,11 +17,11 @@
             ]
         },
         {
-            "name": "Launch Example Client",
+            "name": "Launch Client Example",
             "type": "go",
             "request": "launch",
             "mode": "debug",
-            "program": "${workspaceFolder}/cmd/example-minurl-client",
+            "program": "${workspaceFolder}/cmd/minurl-client-example",
             "cwd": "${workspaceFolder}",
             "args": []
         },

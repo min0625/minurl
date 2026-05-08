@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/min0625/minurl/internal/model"
+	"github.com/min0625/minurl/internal/service"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
@@ -128,7 +128,7 @@ func TestPostgresShortURLStorageCreateIfAbsent(t *testing.T) {
 		}
 	}()
 
-	entry := model.ShortURL{
+	entry := service.ShortURL{
 		ID:          "abc123",
 		OriginalURL: "https://example.com",
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
@@ -159,7 +159,7 @@ func TestPostgresShortURLStorageCreateIfAbsentConflict(t *testing.T) {
 		}
 	}()
 
-	entry := model.ShortURL{
+	entry := service.ShortURL{
 		ID:          "dup001",
 		OriginalURL: "https://example.com/first",
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
@@ -169,7 +169,7 @@ func TestPostgresShortURLStorageCreateIfAbsentConflict(t *testing.T) {
 		t.Fatalf("first CreateIfAbsent() error = %v", err)
 	}
 
-	duplicate := model.ShortURL{
+	duplicate := service.ShortURL{
 		ID:          "dup001",
 		OriginalURL: "https://example.com/second",
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
@@ -200,7 +200,7 @@ func TestPostgresShortURLStorageGetByID(t *testing.T) {
 		}
 	}()
 
-	want := model.ShortURL{
+	want := service.ShortURL{
 		ID:          "get001",
 		OriginalURL: "https://example.com/get",
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
@@ -316,7 +316,7 @@ func TestNewPostgresBackends(t *testing.T) {
 
 	ctx := context.Background()
 
-	entry := model.ShortURL{
+	entry := service.ShortURL{
 		ID:          "happy001",
 		OriginalURL: "https://example.com/happy",
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
