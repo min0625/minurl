@@ -4,6 +4,7 @@
 package middleware
 
 import (
+	"bytes"
 	"compress/gzip"
 	"context"
 	"fmt"
@@ -43,6 +44,13 @@ func (w *ResponseWriter) Write(b []byte) (int, error) {
 	w.BytesWritten += n
 
 	return n, err
+}
+
+// Flush implements http.Flusher by delegating to the underlying ResponseWriter if it supports it.
+func (w *ResponseWriter) Flush() {
+	if f, ok := w.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }
 
 // RequestLogger injects per-request log attributes (method, path, remote addr, trace IDs)
@@ -104,9 +112,16 @@ func LoggerAttrsFromContext(ctx context.Context) []slog.Attr {
 	return nil
 }
 
+// MaxDecompressedBodySize is the maximum allowed size of a decompressed gzip request body.
+// This prevents zip bomb attacks where a small compressed payload expands to an enormous size.
+const MaxDecompressedBodySize = 1 << 20 // 1 MiB
+
 // RequestDecompress decompresses request bodies that use Content-Encoding: gzip,
 // allowing clients to send compressed payloads.
 // Unsupported encoding values result in a 415 Unsupported Media Type response.
+// Decompressed bodies are explicitly capped at MaxDecompressedBodySize:
+// if the decompressed content exceeds this limit, the handler returns 413 Request Entity Too Large
+// before invoking the next handler, preventing both zip bomb attacks and silent partial processing.
 func RequestDecompress(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		encoding := strings.TrimSpace(r.Header.Get("Content-Encoding"))
@@ -137,9 +152,28 @@ func RequestDecompress(next http.Handler) http.Handler {
 			}
 		}()
 
+		// Read at most MaxDecompressedBodySize+1 bytes. Attempting to read one byte
+		// beyond the cap lets us distinguish "exactly at limit" from "over limit"
+		// without consuming unbounded memory.
+		data, readErr := io.ReadAll(io.LimitReader(gr, MaxDecompressedBodySize+1))
+		if readErr != nil {
+			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			return
+		}
+
+		if int64(len(data)) > MaxDecompressedBodySize {
+			http.Error(
+				w,
+				http.StatusText(http.StatusRequestEntityTooLarge),
+				http.StatusRequestEntityTooLarge,
+			)
+
+			return
+		}
+
 		r2 := r.Clone(r.Context())
-		r2.Body = io.NopCloser(gr)
-		r2.ContentLength = -1
+		r2.Body = io.NopCloser(bytes.NewReader(data))
+		r2.ContentLength = int64(len(data))
 		r2.Header.Del("Content-Encoding")
 		r2.Header.Del("Content-Length")
 

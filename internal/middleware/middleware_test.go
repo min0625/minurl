@@ -93,15 +93,30 @@ func TestRequestDecompressMiddleware(t *testing.T) {
 			wantStatus:      http.StatusBadRequest,
 			wantBody:        "",
 		},
+		{
+			name:            "decompressed body exceeding limit returns 413",
+			contentEncoding: "gzip",
+			body: func() io.Reader {
+				// Produce a payload that decompresses to just over MaxDecompressedBodySize.
+				oversized := strings.Repeat("a", middleware.MaxDecompressedBodySize+1)
+				return gzipBody(t, oversized)
+			},
+			wantStatus: http.StatusRequestEntityTooLarge,
+			wantBody:   "",
+		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			var gotBody string
+			var (
+				gotBody          string
+				gotContentLength int64
+			)
 
 			inner := http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				b, _ := io.ReadAll(r.Body)
 				gotBody = string(b)
+				gotContentLength = r.ContentLength
 			})
 
 			h := middleware.RequestDecompress(inner)
@@ -125,6 +140,14 @@ func TestRequestDecompressMiddleware(t *testing.T) {
 
 			if tc.wantBody != "" && gotBody != tc.wantBody {
 				t.Fatalf("expected body %q, got %q", tc.wantBody, gotBody)
+			}
+
+			if tc.wantBody != "" && gotContentLength != int64(len(tc.wantBody)) {
+				t.Fatalf(
+					"expected ContentLength %d, got %d",
+					len(tc.wantBody),
+					gotContentLength,
+				)
 			}
 		})
 	}
