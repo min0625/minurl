@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"time"
 
 	_ "github.com/jackc/pgx/v5/stdlib" // register pgx driver
@@ -149,11 +148,12 @@ type PostgresShortURLCounter struct {
 	db *sql.DB
 }
 
-// errCounterExhausted is returned when the counter exceeds the uint32 maximum.
+// errCounterExhausted is returned when the counter value is zero or negative,
+// indicating data corruption or a BIGINT (int64) overflow in the database.
 var errCounterExhausted = errors.New("short url counter exhausted")
 
 // Next returns the next counter value using an atomic upsert.
-func (c *PostgresShortURLCounter) Next(ctx context.Context) (uint32, error) {
+func (c *PostgresShortURLCounter) Next(ctx context.Context) (uint64, error) {
 	var value int64
 
 	err := c.db.QueryRowContext(
@@ -167,9 +167,9 @@ func (c *PostgresShortURLCounter) Next(ctx context.Context) (uint32, error) {
 		return 0, fmt.Errorf("next counter: %w", err)
 	}
 
-	if value > math.MaxUint32 {
+	if value <= 0 {
 		return 0, errCounterExhausted
 	}
 
-	return uint32(value), nil //nolint:gosec // range checked above
+	return uint64(value), nil
 }

@@ -19,7 +19,7 @@ func NewIDGenerator(id string) *IDGenerator {
 }
 
 // Generate returns the configured fixed ID.
-func (g *IDGenerator) Generate(_ uint32) string {
+func (g *IDGenerator) Generate(_ uint64) string {
 	g.calls.Add(1)
 	return g.id
 }

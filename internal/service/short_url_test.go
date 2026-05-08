@@ -186,7 +186,7 @@ func TestIsValidShortURLID(t *testing.T) {
 		{"disallowed base58 char O", "O", true},
 		{"disallowed base58 char I", "I", true},
 		{"disallowed base58 char l", "l", true},
-		{"too long", "123456789AB", true},
+		{"too long", "123456789ABCD", true},
 	}
 
 	for _, tt := range tests {
@@ -307,7 +307,7 @@ func TestFeistelIDGeneratorWithSeedIsDeterministic(t *testing.T) {
 	b := service.NewFeistelIDGeneratorWithSeed(12345)
 	c := service.NewFeistelIDGeneratorWithSeed(54321)
 
-	seq := []uint32{1, 2, 3, 1024, 65535}
+	seq := []uint64{1, 2, 3, 1024, 65535}
 
 	for _, v := range seq {
 		if gotA, gotB := a.Generate(v), b.Generate(v); gotA != gotB {
@@ -328,7 +328,7 @@ func TestDefaultFeistelIDGeneratorUsesDefaultSeed(t *testing.T) {
 	defaultGen := service.NewDefaultFeistelIDGenerator()
 	seedGen := service.NewFeistelIDGeneratorWithSeed(expectedDefaultSeed)
 
-	seq := []uint32{1, 2, 3, 1024, 65535}
+	seq := []uint64{1, 2, 3, 1024, 65535}
 
 	for _, v := range seq {
 		if gotDefault, gotSeed := defaultGen.Generate(
