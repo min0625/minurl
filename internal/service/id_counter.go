@@ -8,5 +8,5 @@ import (
 
 // ShortURLCounter describes counter operations required by ShortURLService.
 type ShortURLCounter interface {
-	Next(ctx context.Context) (uint32, error)
+	Next(ctx context.Context) (uint64, error)
 }

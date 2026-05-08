@@ -65,6 +65,18 @@ Response: 302 Found
 Location: https://example.com/very/long/url
 ```
 
+## Short URL ID format
+
+Auto-generated short IDs are Base58 strings using the alphabet:
+`123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`.
+
+- Auto-generated IDs are 6–12 characters long.
+- The first 6 characters encode a Feistel-permuted low 32-bit sequence.
+- Longer IDs append an unpadded Base58 suffix derived from the upper 32 bits.
+- This preserves compact 6-char IDs for the first 2^32 entries while extending capacity safely beyond 2^32 entries (up to the uint64 limit).
+
+Custom `id` values are also validated against the same Base58 character rules and maximum length.
+
 ## HTTP Debug Requests
 
 Reusable REST Client examples are available at:

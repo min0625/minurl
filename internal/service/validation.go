@@ -13,7 +13,7 @@ const (
 	Base58Alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 	// MaxShortURLIDLen is the maximum allowed length for a short URL identifier.
-	MaxShortURLIDLen = 10
+	MaxShortURLIDLen = 12
 )
 
 // IsValidShortURLID returns nil when id conforms to allowed short URL identifier rules,

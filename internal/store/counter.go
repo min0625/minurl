@@ -21,7 +21,7 @@ func (c *SQLiteShortURLCounter) Close() error {
 }
 
 // Next returns the next monotonic sequence value.
-func (c *SQLiteShortURLCounter) Next(ctx context.Context) (uint32, error) {
+func (c *SQLiteShortURLCounter) Next(ctx context.Context) (uint64, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return 0, err
@@ -56,7 +56,7 @@ func (c *SQLiteShortURLCounter) Next(ctx context.Context) (uint32, error) {
 func (c *SQLiteShortURLCounter) nextInTx(
 	ctx context.Context,
 	tx *sql.Tx,
-) (uint32, bool, error) {
+) (uint64, bool, error) {
 	var current uint64
 
 	err := tx.QueryRowContext(
@@ -90,7 +90,7 @@ func (c *SQLiteShortURLCounter) nextInTx(
 		return 0, false, fmt.Errorf("read counter value: %w", err)
 	}
 
-	if current >= uint64(math.MaxUint32) {
+	if current == math.MaxUint64 {
 		return 0, false, fmt.Errorf("short id sequence exhausted")
 	}
 
@@ -116,5 +116,5 @@ func (c *SQLiteShortURLCounter) nextInTx(
 		return 0, false, nil
 	}
 
-	return uint32(next), true, nil
+	return next, true, nil
 }

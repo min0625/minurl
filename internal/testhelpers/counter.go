@@ -11,7 +11,7 @@ import (
 // Counter is a test implementation of the ShortURLCounter interface.
 // It provides a monotonically increasing sequence.
 type Counter struct {
-	value atomic.Uint32
+	value atomic.Uint64
 }
 
 // NewCounter creates a new test counter starting at 0.
@@ -20,7 +20,7 @@ func NewCounter() *Counter {
 }
 
 // Next returns the next counter value.
-func (c *Counter) Next(ctx context.Context) (uint32, error) {
+func (c *Counter) Next(ctx context.Context) (uint64, error) {
 	if err := ctx.Err(); err != nil {
 		return 0, err
 	}
@@ -29,6 +29,6 @@ func (c *Counter) Next(ctx context.Context) (uint32, error) {
 }
 
 // GetValue returns the current counter value without incrementing.
-func (c *Counter) GetValue() uint32 {
+func (c *Counter) GetValue() uint64 {
 	return c.value.Load()
 }
