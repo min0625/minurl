@@ -11,6 +11,8 @@ import (
 type ShortURL struct {
     // Creation time
     create_time *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time
+    // Expiration time; omit or null for permanent
+    expire_time *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time
     // Unique id
     id *string
     // Original URL to shorten
@@ -34,6 +36,11 @@ func CreateShortURLFromDiscriminatorValue(parseNode i878a80d2330e89d26896388a3f4
 func (m *ShortURL) GetCreateTime()(*i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time) {
     return m.create_time
 }
+// GetExpireTime gets the expire_time property value. Expiration time; omit or null for permanent
+// returns a *Time when successful
+func (m *ShortURL) GetExpireTime()(*i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time) {
+    return m.expire_time
+}
 // GetFieldDeserializers the deserialization information for the current model
 // returns a map[string]func(i878a80d2330e89d26896388a3f487eef27b0a0e6c010c493bf80be1452208f91.ParseNode)(error) when successful
 func (m *ShortURL) GetFieldDeserializers()(map[string]func(i878a80d2330e89d26896388a3f487eef27b0a0e6c010c493bf80be1452208f91.ParseNode)(error)) {
@@ -45,6 +52,16 @@ func (m *ShortURL) GetFieldDeserializers()(map[string]func(i878a80d2330e89d26896
         }
         if val != nil {
             m.SetCreateTime(val)
+        }
+        return nil
+    }
+    res["expire_time"] = func (n i878a80d2330e89d26896388a3f487eef27b0a0e6c010c493bf80be1452208f91.ParseNode) error {
+        val, err := n.GetTimeValue()
+        if err != nil {
+            return err
+        }
+        if val != nil {
+            m.SetExpireTime(val)
         }
         return nil
     }
@@ -98,6 +115,12 @@ func (m *ShortURL) GetSchema()(*string) {
 // Serialize serializes information the current object
 func (m *ShortURL) Serialize(writer i878a80d2330e89d26896388a3f487eef27b0a0e6c010c493bf80be1452208f91.SerializationWriter)(error) {
     {
+        err := writer.WriteTimeValue("expire_time", m.GetExpireTime())
+        if err != nil {
+            return err
+        }
+    }
+    {
         err := writer.WriteStringValue("id", m.GetId())
         if err != nil {
             return err
@@ -115,6 +138,10 @@ func (m *ShortURL) Serialize(writer i878a80d2330e89d26896388a3f487eef27b0a0e6c01
 func (m *ShortURL) SetCreateTime(value *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time)() {
     m.create_time = value
 }
+// SetExpireTime sets the expire_time property value. Expiration time; omit or null for permanent
+func (m *ShortURL) SetExpireTime(value *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time)() {
+    m.expire_time = value
+}
 // SetId sets the id property value. Unique id
 func (m *ShortURL) SetId(value *string)() {
     m.id = value
@@ -130,10 +157,12 @@ func (m *ShortURL) SetSchema(value *string)() {
 type ShortURLable interface {
     i878a80d2330e89d26896388a3f487eef27b0a0e6c010c493bf80be1452208f91.Parsable
     GetCreateTime()(*i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time)
+    GetExpireTime()(*i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time)
     GetId()(*string)
     GetOriginalUrl()(*string)
     GetSchema()(*string)
     SetCreateTime(value *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time)()
+    SetExpireTime(value *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time)()
     SetId(value *string)()
     SetOriginalUrl(value *string)()
     SetSchema(value *string)()

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/testhelpers"
@@ -388,4 +389,99 @@ func newTestShortURLService(t *testing.T) *service.ShortURLService {
 	}
 
 	return svc
+}
+
+func TestShortURLServiceGetReturnsNotFoundWhenExpired(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestShortURLService(t)
+
+	past := time.Now().UTC().Add(-time.Hour)
+
+	entry, err := svc.Create(
+		context.Background(),
+		service.ShortURL{
+			OriginalURL: "https://example.org/expired",
+			ExpireTime:  &past,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	got, ok, err := svc.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if ok {
+		t.Fatalf("Get() ok = true for expired URL, want false")
+	}
+
+	if got != nil {
+		t.Fatalf("Get() returned non-nil entry for expired URL")
+	}
+}
+
+func TestShortURLServiceGetReturnsFutureExpireURL(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestShortURLService(t)
+
+	future := time.Now().UTC().Add(time.Hour)
+
+	entry, err := svc.Create(
+		context.Background(),
+		service.ShortURL{
+			OriginalURL: "https://example.org/future",
+			ExpireTime:  &future,
+		},
+	)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	got, ok, err := svc.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if !ok {
+		t.Fatalf("Get() ok = false for non-expired URL, want true")
+	}
+
+	if got.OriginalURL != "https://example.org/future" {
+		t.Fatalf("Get() original_url = %q, want %q", got.OriginalURL, "https://example.org/future")
+	}
+
+	if got.ExpireTime == nil {
+		t.Fatal("Get() ExpireTime = nil, want non-nil")
+	}
+}
+
+func TestShortURLServiceGetNilExpireTimeIsPermanent(t *testing.T) {
+	t.Parallel()
+
+	svc := newTestShortURLService(t)
+
+	entry, err := svc.Create(
+		context.Background(),
+		service.ShortURL{OriginalURL: "https://example.org/permanent"},
+	)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	got, ok, err := svc.Get(context.Background(), entry.ID)
+	if err != nil {
+		t.Fatalf("Get() error = %v", err)
+	}
+
+	if !ok {
+		t.Fatalf("Get() ok = false for permanent URL, want true")
+	}
+
+	if got.ExpireTime != nil {
+		t.Fatalf("Get() ExpireTime = %v, want nil for permanent URL", got.ExpireTime)
+	}
 }

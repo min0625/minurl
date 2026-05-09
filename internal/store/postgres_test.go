@@ -342,3 +342,100 @@ func TestNewPostgresBackends(t *testing.T) {
 		t.Fatalf("counter.Next() = 0, want > 0")
 	}
 }
+
+func TestPostgresShortURLStorageExpireTimeRoundTrip(t *testing.T) {
+	t.Parallel()
+	skipIfNoIntegration(t)
+
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	if err != nil {
+		t.Fatalf("NewPostgresBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close postgres backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+	expiry := time.Date(2030, 6, 15, 9, 0, 0, 0, time.UTC)
+	entry := service.ShortURL{
+		ID:          "pgexpiry01",
+		OriginalURL: "https://example.com/pgexpiry",
+		ExpireTime:  &expiry,
+		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	created, err := storage.CreateIfAbsent(ctx, entry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent() error = %v", err)
+	}
+
+	if !created {
+		t.Fatalf("CreateIfAbsent() = false, want true")
+	}
+
+	got, found, err := storage.GetByID(ctx, entry.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+
+	if !found {
+		t.Fatalf("GetByID() found = false, want true")
+	}
+
+	if got.ExpireTime == nil {
+		t.Fatalf("GetByID() ExpireTime = nil, want %v", expiry)
+	}
+
+	if !got.ExpireTime.Equal(expiry) {
+		t.Fatalf("GetByID() ExpireTime = %v, want %v", got.ExpireTime, expiry)
+	}
+}
+
+func TestPostgresShortURLStorageNilExpireTimeRoundTrip(t *testing.T) {
+	t.Parallel()
+	skipIfNoIntegration(t)
+
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	if err != nil {
+		t.Fatalf("NewPostgresBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close postgres backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+	entry := service.ShortURL{
+		ID:          "pgnoexpiry1",
+		OriginalURL: "https://example.com/pgnoexpiry",
+		ExpireTime:  nil,
+		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	created, err := storage.CreateIfAbsent(ctx, entry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent() error = %v", err)
+	}
+
+	if !created {
+		t.Fatalf("CreateIfAbsent() = false, want true")
+	}
+
+	got, found, err := storage.GetByID(ctx, entry.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+
+	if !found {
+		t.Fatalf("GetByID() found = false, want true")
+	}
+
+	if got.ExpireTime != nil {
+		t.Fatalf("GetByID() ExpireTime = %v, want nil", got.ExpireTime)
+	}
+}

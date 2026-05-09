@@ -23,12 +23,20 @@ func (s *SQLiteShortURLStorage) CreateIfAbsent(
 	ctx context.Context,
 	entry service.ShortURL,
 ) (bool, error) {
+	var expireTimeStr *string
+
+	if entry.ExpireTime != nil {
+		formatted := entry.ExpireTime.UTC().Format(time.RFC3339Nano)
+		expireTimeStr = &formatted
+	}
+
 	result, err := s.db.ExecContext(
 		ctx,
-		`INSERT OR IGNORE INTO short_urls (id, original_url, create_time) VALUES (?, ?, ?)`,
+		`INSERT OR IGNORE INTO short_urls (id, original_url, create_time, expire_time) VALUES (?, ?, ?, ?)`,
 		entry.ID,
 		entry.OriginalURL,
 		entry.CreateTime.UTC().Format(time.RFC3339Nano),
+		expireTimeStr,
 	)
 	if err != nil {
 		return false, fmt.Errorf("insert short url: %w", err)
@@ -51,11 +59,13 @@ func (s *SQLiteShortURLStorage) GetByID(
 
 	var createTimeStr string
 
+	var expireTimeStr *string
+
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, original_url, create_time FROM short_urls WHERE id = ?`,
+		`SELECT id, original_url, create_time, expire_time FROM short_urls WHERE id = ?`,
 		id,
-	).Scan(&entry.ID, &entry.OriginalURL, &createTimeStr)
+	).Scan(&entry.ID, &entry.OriginalURL, &createTimeStr, &expireTimeStr)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.ShortURL{}, false, nil
@@ -68,6 +78,19 @@ func (s *SQLiteShortURLStorage) GetByID(
 	entry.CreateTime, err = time.Parse(time.RFC3339Nano, createTimeStr)
 	if err != nil {
 		return service.ShortURL{}, false, fmt.Errorf("parse create_time %q: %w", createTimeStr, err)
+	}
+
+	if expireTimeStr != nil {
+		t, parseErr := time.Parse(time.RFC3339Nano, *expireTimeStr)
+		if parseErr != nil {
+			return service.ShortURL{}, false, fmt.Errorf(
+				"parse expire_time %q: %w",
+				*expireTimeStr,
+				parseErr,
+			)
+		}
+
+		entry.ExpireTime = &t
 	}
 
 	return entry, true, nil

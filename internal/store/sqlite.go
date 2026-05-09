@@ -84,6 +84,11 @@ func migrateSQLite(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 
+	// Add expire_time column for existing databases.
+	// Error is intentionally ignored: the only expected failure is "duplicate column name"
+	// when the column already exists. A proper migration strategy will be addressed later.
+	_, _ = db.ExecContext(ctx, `ALTER TABLE short_urls ADD COLUMN expire_time TEXT`)
+
 	_, err = db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS counters (
 			name  TEXT PRIMARY KEY,

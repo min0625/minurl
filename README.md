@@ -28,19 +28,22 @@ Online viewer:
 
 **Create a short URL**
 (`id` is optional. If omitted, the server auto-generates one.)
+(`expire_time` is optional. If omitted or null, the URL is permanent.)
 ```
 POST /api/v1/urls
 Content-Type: application/json
 
 {
   "original_url": "https://example.com/very/long/url",
-  "id": "myshort"
+  "id": "myshort",
+  "expire_time": "2099-01-01T00:00:00Z"
 }
 
 Response: 200 OK
 {
   "id": "myshort",
   "original_url": "https://example.com/very/long/url",
+  "expire_time": "2099-01-01T00:00:00Z",
   "create_time": "2026-04-28T16:00:00Z"
 }
 ```
@@ -53,9 +56,12 @@ Response: 200 OK
 {
   "id": "myshort",
   "original_url": "https://example.com/very/long/url",
+  "expire_time": "2099-01-01T00:00:00Z",
   "create_time": "2026-04-28T16:00:00Z"
 }
 ```
+
+> Returns `404 Not Found` if the short URL does not exist or has expired.
 
 **Redirect to original URL**
 ```
@@ -64,6 +70,18 @@ GET /api/v1/urls/{id}:redirect
 Response: 302 Found
 Location: https://example.com/very/long/url
 ```
+
+> Returns `404 Not Found` if the short URL does not exist or has expired.
+
+## Short URL Expiry
+
+Short URLs support an optional `expire_time` field (RFC 3339 / ISO 8601 UTC):
+
+- **Omitted or `null`**: the URL is **permanent** and never expires.
+- **Set to a future time**: the URL is valid until that moment.
+- **Set to a past time** (or once the time has passed): the URL is treated as if it does not exist — both `GET` metadata and `:redirect` return `404 Not Found`.
+
+Existing data in the database (rows without `expire_time`) are automatically treated as permanent.
 
 ## Short URL ID format
 

@@ -99,6 +99,7 @@ func (s *ShortURLService) Create(
 }
 
 // Get retrieves a short URL by ID.
+// Returns (nil, false, nil) when the ID is not found or the URL has expired.
 func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, bool, error) {
 	entry, ok, err := s.store.GetByID(ctx, id)
 	if err != nil {
@@ -106,6 +107,10 @@ func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, bool, 
 	}
 
 	if !ok {
+		return nil, false, nil
+	}
+
+	if entry.ExpireTime != nil && time.Now().After(*entry.ExpireTime) {
 		return nil, false, nil
 	}
 

@@ -27,6 +27,38 @@ content-type: application/json
   "id": "Min"
 }
 
+### Create short URL with expiry time (permanent far-future expiry; adjust timestamp as needed)
+# @name createShortURLWithExpiry
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
+content-type: application/json
+
+{
+  "original_url": "{{sampleOriginalURL}}",
+  "expire_time": "2099-01-01T00:00:00Z"
+}
+
+### Create short URL with custom ID and expiry time
+# @name createShortURLWithCustomIDAndExpiry
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
+content-type: application/json
+
+{
+  "original_url": "{{sampleOriginalURL}}",
+  "id": "Tmp",
+  "expire_time": "2099-01-01T00:00:00Z"
+}
+
+### Create short URL that is already expired (expect 404 on access)
+# @name createExpiredShortURL
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
+content-type: application/json
+
+{
+  "original_url": "{{sampleOriginalURL}}",
+  "id": "Past",
+  "expire_time": "2000-01-01T00:00:00Z"
+}
+
 ### Get short URL by ID (from create response)
 # If create request has not been executed yet, run the create request first.
 GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}} HTTP/1.1
@@ -39,6 +71,18 @@ GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}}:redirect HTTP/
 ### Redirect to original URL with custom ID (HTTP 302)
 # Using the custom ID from createShortURLWithCustomID request
 GET {{baseUrl}}/api/v1/urls/Min:redirect HTTP/1.1
+
+### Get short URL with expiry (from createShortURLWithExpiry response)
+GET {{baseUrl}}/api/v1/urls/{{createShortURLWithExpiry.response.body.$.id}} HTTP/1.1
+
+### Redirect short URL with expiry (HTTP 302 while not expired)
+GET {{baseUrl}}/api/v1/urls/{{createShortURLWithExpiry.response.body.$.id}}:redirect HTTP/1.1
+
+### Get already-expired short URL (expect HTTP 404)
+GET {{baseUrl}}/api/v1/urls/Past HTTP/1.1
+
+### Redirect already-expired short URL (expect HTTP 404)
+GET {{baseUrl}}/api/v1/urls/Past:redirect HTTP/1.1
 
 ### Not found example (expected HTTP 404)
 GET {{baseUrl}}/api/v1/urls/NOT_FOUND_EXAMPLE HTTP/1.1
