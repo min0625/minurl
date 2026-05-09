@@ -63,6 +63,9 @@ func runServer(cfg appConfig) error {
 		Addr:              cfg.HTTPAddr,
 		Handler:           h,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	server.RegisterOnShutdown(func() {
 		slog.Info("server shutdown hook triggered")

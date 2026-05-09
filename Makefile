@@ -32,6 +32,11 @@ docker-build:
 docker-run:
 	docker run --rm -p $(DOCKER_PORT) -v $(DOCKER_VOLUME) $(IMAGE):$(IMAGE_TAG)
 
+.PHONY: build
+build:
+	mkdir -p $(BIN_DIR)
+	CGO_ENABLED=0 go build -trimpath -ldflags="$(LDFLAGS)" -o $(OUT_BINARY) ./cmd/minurl
+
 .PHONY: fix
 fix:
 	go mod tidy

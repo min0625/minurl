@@ -15,9 +15,12 @@ FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /app/minurl /minurl
 
-ENV MINURL_STORAGE_PATH=/data/minurl.sqlite3
+ENV MINURL_STORAGE_DSN=sqlite3:///data/minurl.sqlite3
 
 VOLUME ["/data"]
 EXPOSE 8888
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD ["/minurl", "version"]
 
 ENTRYPOINT ["/minurl"]
