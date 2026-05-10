@@ -4,6 +4,7 @@ package testhelpers
 
 import (
 	"context"
+	"errors"
 
 	"github.com/min0625/minurl/internal/service"
 )
@@ -11,8 +12,9 @@ import (
 // Storage is a test implementation of the ShortURLStorage interface.
 // It stores entries in memory and supports configurable error injection.
 type Storage struct {
-	entries map[string]service.ShortURL
-	getErr  error
+	entries   map[string]service.ShortURL
+	getErr    error
+	createErr error
 }
 
 // NewStorage creates a new in-memory test storage.
@@ -28,8 +30,18 @@ func (s *Storage) WithGetError(err error) *Storage {
 	return s
 }
 
+// WithCreateError configures the storage to return the specified error on CreateIfAbsent calls.
+func (s *Storage) WithCreateError(err error) *Storage {
+	s.createErr = err
+	return s
+}
+
 // CreateIfAbsent creates an entry if the ID is not already present.
 func (s *Storage) CreateIfAbsent(ctx context.Context, entry service.ShortURL) (bool, error) {
+	if s.createErr != nil {
+		return false, s.createErr
+	}
+
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
@@ -62,3 +74,6 @@ func (s *Storage) GetByID(ctx context.Context, id string) (service.ShortURL, boo
 func (s *Storage) GetEntries() map[string]service.ShortURL {
 	return s.entries
 }
+
+// ErrStorageCreateFailed is a sentinel error for create failures in tests.
+var ErrStorageCreateFailed = errors.New("storage create failed")

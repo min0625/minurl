@@ -74,6 +74,12 @@ components:
           format: date-time
           readOnly: true
           type: string
+        expire_time:
+          description: Expiration time; omit or null for permanent
+          format: date-time
+          type:
+            - string
+            - "null"
         id:
           description: Unique id
           type: string

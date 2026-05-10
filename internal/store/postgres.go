@@ -72,6 +72,13 @@ func migratePostgres(ctx context.Context, db *sql.DB) error {
 	}
 
 	_, err = db.ExecContext(ctx, `
+		ALTER TABLE short_urls ADD COLUMN IF NOT EXISTS expire_time TIMESTAMPTZ
+	`)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS counters (
 			name  TEXT PRIMARY KEY,
 			value BIGINT NOT NULL
@@ -92,14 +99,22 @@ func (s *PostgresShortURLStorage) CreateIfAbsent(
 	ctx context.Context,
 	entry service.ShortURL,
 ) (bool, error) {
+	var expireTime *time.Time
+
+	if entry.ExpireTime != nil {
+		t := entry.ExpireTime.UTC()
+		expireTime = &t
+	}
+
 	result, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO short_urls (id, original_url, create_time)
-		 VALUES ($1, $2, $3)
+		`INSERT INTO short_urls (id, original_url, create_time, expire_time)
+		 VALUES ($1, $2, $3, $4)
 		 ON CONFLICT (id) DO NOTHING`,
 		entry.ID,
 		entry.OriginalURL,
 		entry.CreateTime.UTC(),
+		expireTime,
 	)
 	if err != nil {
 		return false, fmt.Errorf("create short url: %w", err)
@@ -122,13 +137,14 @@ func (s *PostgresShortURLStorage) GetByID(
 	var (
 		entry      service.ShortURL
 		createTime time.Time
+		expireTime *time.Time
 	)
 
 	err := s.db.QueryRowContext(
 		ctx,
-		`SELECT id, original_url, create_time FROM short_urls WHERE id = $1`,
+		`SELECT id, original_url, create_time, expire_time FROM short_urls WHERE id = $1`,
 		id,
-	).Scan(&entry.ID, &entry.OriginalURL, &createTime)
+	).Scan(&entry.ID, &entry.OriginalURL, &createTime, &expireTime)
 
 	if errors.Is(err, sql.ErrNoRows) {
 		return service.ShortURL{}, false, nil
@@ -139,6 +155,11 @@ func (s *PostgresShortURLStorage) GetByID(
 	}
 
 	entry.CreateTime = createTime.UTC()
+
+	if expireTime != nil {
+		t := expireTime.UTC()
+		entry.ExpireTime = &t
+	}
 
 	return entry, true, nil
 }

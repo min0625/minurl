@@ -3,6 +3,9 @@ package store //nolint:testpackage // White-box tests validate internal SQLite h
 import (
 	"context"
 	"testing"
+	"time"
+
+	"github.com/min0625/minurl/internal/service"
 )
 
 func TestParseSQLiteDSN(t *testing.T) {
@@ -118,5 +121,100 @@ func TestSQLiteShortURLCounterNextInitializesMissingCounterRow(t *testing.T) {
 
 	if next != 1 {
 		t.Fatalf("Next() = %d, want 1", next)
+	}
+}
+
+func TestSQLiteShortURLStorageExpireTimeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	storage, _, closer, err := NewSQLiteBackends("sqlite3:///" + t.TempDir() + "/expiry.sqlite3")
+	if err != nil {
+		t.Fatalf("NewSQLiteBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close sqlite backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+	expiry := time.Date(2030, 1, 1, 12, 0, 0, 0, time.UTC)
+	entry := service.ShortURL{
+		ID:          "expirytest",
+		OriginalURL: "https://example.com/expiry",
+		ExpireTime:  &expiry,
+		CreateTime:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	created, err := storage.CreateIfAbsent(ctx, entry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent() error = %v", err)
+	}
+
+	if !created {
+		t.Fatalf("CreateIfAbsent() = false, want true")
+	}
+
+	got, found, err := storage.GetByID(ctx, entry.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+
+	if !found {
+		t.Fatalf("GetByID() found = false, want true")
+	}
+
+	if got.ExpireTime == nil {
+		t.Fatalf("GetByID() ExpireTime = nil, want %v", expiry)
+	}
+
+	if !got.ExpireTime.Equal(expiry) {
+		t.Fatalf("GetByID() ExpireTime = %v, want %v", got.ExpireTime, expiry)
+	}
+}
+
+func TestSQLiteShortURLStorageNilExpireTimeRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	storage, _, closer, err := NewSQLiteBackends("sqlite3:///" + t.TempDir() + "/noexpiry.sqlite3")
+	if err != nil {
+		t.Fatalf("NewSQLiteBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close sqlite backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+	entry := service.ShortURL{
+		ID:          "noexpiry1",
+		OriginalURL: "https://example.com/noexpiry",
+		ExpireTime:  nil,
+		CreateTime:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	created, err := storage.CreateIfAbsent(ctx, entry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent() error = %v", err)
+	}
+
+	if !created {
+		t.Fatalf("CreateIfAbsent() = false, want true")
+	}
+
+	got, found, err := storage.GetByID(ctx, entry.ID)
+	if err != nil {
+		t.Fatalf("GetByID() error = %v", err)
+	}
+
+	if !found {
+		t.Fatalf("GetByID() found = false, want true")
+	}
+
+	if got.ExpireTime != nil {
+		t.Fatalf("GetByID() ExpireTime = %v, want nil", got.ExpireTime)
 	}
 }

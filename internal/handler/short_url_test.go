@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -235,5 +236,75 @@ func TestRegisterRedirectRouteReturns500WhenStorageFails(t *testing.T) {
 
 	if resp.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
+	}
+}
+
+func TestRegisterRedirectRouteReturns404ForExpiredShortURL(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	store := testhelpers.NewStorage()
+	svc := newHandlerTestService(t, store)
+
+	past := time.Now().UTC().Add(-time.Hour)
+
+	_, err := svc.Create(context.Background(), service.ShortURL{
+		ID:          "expired1",
+		OriginalURL: "https://example.com/gone",
+		ExpireTime:  &past,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/expired1:redirect",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNotFound)
+	}
+}
+
+func TestRegisterGetShortURLReturns404ForExpiredShortURL(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	store := testhelpers.NewStorage()
+	svc := newHandlerTestService(t, store)
+
+	past := time.Now().UTC().Add(-time.Hour)
+
+	_, err := svc.Create(context.Background(), service.ShortURL{
+		ID:          "expired2",
+		OriginalURL: "https://example.com/also-gone",
+		ExpireTime:  &past,
+	})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	handler.Register(api, svc)
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodGet,
+		"/api/v1/urls/expired2",
+		nil,
+	)
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNotFound)
 	}
 }
