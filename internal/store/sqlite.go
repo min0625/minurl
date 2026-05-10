@@ -4,13 +4,14 @@
 package store
 
 import (
-	"context"
 	"database/sql"
 	"fmt"
 	"io"
 	"net/url"
 	"strings"
 
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "modernc.org/sqlite" // register sqlite driver
 )
 
@@ -63,7 +64,7 @@ func openSQLiteDB(dsn string) (*sql.DB, error) {
 	db.SetMaxOpenConns(1)
 	db.SetMaxIdleConns(1)
 
-	if err := migrateSQLite(context.Background(), db); err != nil {
+	if err := migrateSQLite(db); err != nil {
 		_ = db.Close()
 
 		return nil, fmt.Errorf("migrate sqlite database: %w", err)
@@ -72,40 +73,18 @@ func openSQLiteDB(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-func migrateSQLite(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS short_urls (
-			id           TEXT PRIMARY KEY,
-			original_url TEXT NOT NULL,
-			create_time  TEXT NOT NULL
-		)
-	`)
+func migrateSQLite(db *sql.DB) error {
+	sourceDriver, err := iofs.New(sqliteMigrations, "migrations/sqlite")
 	if err != nil {
-		return err
+		return fmt.Errorf("create sqlite migration source: %w", err)
 	}
 
-	// Add expire_time column for existing databases.
-	// Error is intentionally ignored: the only expected failure is "duplicate column name"
-	// when the column already exists. A proper migration strategy will be addressed later.
-	_, _ = db.ExecContext(ctx, `ALTER TABLE short_urls ADD COLUMN expire_time TEXT`)
-
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS counters (
-			name  TEXT PRIMARY KEY,
-			value INTEGER NOT NULL
-		)
-	`)
+	dbDriver, err := migratesqlite.WithInstance(db, &migratesqlite.Config{})
 	if err != nil {
-		return err
+		return fmt.Errorf("create sqlite migration driver: %w", err)
 	}
 
-	_, err = db.ExecContext(
-		ctx,
-		`INSERT OR IGNORE INTO counters (name, value) VALUES (?, 0)`,
-		shortURLCounterName,
-	)
-
-	return err
+	return runMigrations(sourceDriver, dbDriver, "sqlite")
 }
 
 // parseSQLiteDSN converts a sqlite3:// URL to the driver path accepted by

@@ -10,6 +10,8 @@ import (
 	"io"
 	"time"
 
+	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "github.com/jackc/pgx/v5/stdlib" // register pgx driver
 	"github.com/min0625/minurl/internal/service"
 )
@@ -50,7 +52,7 @@ func openPostgresDB(dsn string) (*sql.DB, error) {
 	db.SetMaxOpenConns(25)
 	db.SetMaxIdleConns(5)
 
-	if err := migratePostgres(context.Background(), db); err != nil {
+	if err := migratePostgres(db); err != nil {
 		_ = db.Close()
 
 		return nil, fmt.Errorf("migrate postgres database: %w", err)
@@ -59,33 +61,18 @@ func openPostgresDB(dsn string) (*sql.DB, error) {
 	return db, nil
 }
 
-func migratePostgres(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS short_urls (
-			id           TEXT PRIMARY KEY,
-			original_url TEXT NOT NULL,
-			create_time  TIMESTAMPTZ NOT NULL
-		)
-	`)
+func migratePostgres(db *sql.DB) error {
+	sourceDriver, err := iofs.New(postgresMigrations, "migrations/postgres")
 	if err != nil {
-		return err
+		return fmt.Errorf("create postgres migration source: %w", err)
 	}
 
-	_, err = db.ExecContext(ctx, `
-		ALTER TABLE short_urls ADD COLUMN IF NOT EXISTS expire_time TIMESTAMPTZ
-	`)
+	dbDriver, err := migratepostgres.WithInstance(db, &migratepostgres.Config{})
 	if err != nil {
-		return err
+		return fmt.Errorf("create postgres migration driver: %w", err)
 	}
 
-	_, err = db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS counters (
-			name  TEXT PRIMARY KEY,
-			value BIGINT NOT NULL
-		)
-	`)
-
-	return err
+	return runMigrations(sourceDriver, dbDriver, "postgres")
 }
 
 // PostgresShortURLStorage is a PostgreSQL-backed short URL storage.

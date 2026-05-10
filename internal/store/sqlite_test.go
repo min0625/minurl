@@ -92,6 +92,30 @@ func TestOpenSQLiteDBUsesSingleConnectionPool(t *testing.T) {
 	}
 }
 
+func TestSQLiteMigrationIdempotent(t *testing.T) {
+	t.Parallel()
+
+	dsn := "sqlite3:///" + t.TempDir() + "/idempotent.sqlite3"
+
+	_, _, firstCloser, err := NewSQLiteBackends(dsn)
+	if err != nil {
+		t.Fatalf("first NewSQLiteBackends() error = %v", err)
+	}
+
+	if err := firstCloser.Close(); err != nil {
+		t.Fatalf("close first sqlite backend: %v", err)
+	}
+
+	_, _, secondCloser, err := NewSQLiteBackends(dsn)
+	if err != nil {
+		t.Fatalf("second NewSQLiteBackends() error = %v", err)
+	}
+
+	if err := secondCloser.Close(); err != nil {
+		t.Fatalf("close second sqlite backend: %v", err)
+	}
+}
+
 func TestSQLiteShortURLCounterNextInitializesMissingCounterRow(t *testing.T) {
 	t.Parallel()
 
