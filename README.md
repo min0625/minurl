@@ -216,8 +216,8 @@ sqlite3:///absolute/path/minurl.db    absolute path (three slashes)
 | sslmode | When to use |
 |---------|------------|
 | `disable` | Local development / loopback only. **Never use in production.** |
-| `require` | SSL required, server certificate not verified. Acceptable if using a private CA. |
-| `verify-ca` | SSL required, CA signature verified. |
+| `require` | SSL required, server certificate **not** verified. Protects against passive eavesdropping only; does not prevent MITM attacks. |
+| `verify-ca` | SSL required, CA signature verified. Acceptable for internal networks with a private CA. |
 | `verify-full` | SSL required, CA + hostname verified. **Recommended for production.** |
 
 > **Warning**: When the server detects `sslmode=disable` in the PostgreSQL DSN, it logs a warning at startup. Do not ignore this warning in production.

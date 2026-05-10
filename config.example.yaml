@@ -23,8 +23,10 @@ http-addr: ":8888"
 #   disable     — no SSL/TLS. NEVER use in production.
 #   allow       — tries plain, falls back to SSL.
 #   prefer      — tries SSL, falls back to plain.
-#   require     — SSL required, server certificate not verified.
-#   verify-ca   — SSL required, CA signature verified.
+#   require     — SSL required, server certificate NOT verified. Protects against
+#                 passive eavesdropping only; does not prevent MITM attacks.
+#   verify-ca   — SSL required, CA signature verified. Acceptable for internal
+#                 networks with a private CA.
 #   verify-full — SSL required, CA + hostname verified. Recommended for production.
 #
 # The backend is auto-detected from the DSN scheme.

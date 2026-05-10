@@ -119,8 +119,25 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	cfg.OTELInsecure = v.GetBool("otel.insecure")
 	cfg.DBMaxOpenConns = v.GetInt("db.max-open-conns")
 	cfg.DBMaxIdleConns = v.GetInt("db.max-idle-conns")
-	cfg.DBConnMaxLifetime = v.GetDuration("db.conn-max-lifetime")
-	cfg.DBConnMaxIdleTime = v.GetDuration("db.conn-max-idle-time")
+
+	dbConnMaxLifetime, err := parseDurationConfig(
+		v.GetString("db.conn-max-lifetime"),
+		"db.conn-max-lifetime",
+	)
+	if err != nil {
+		return appConfig{}, err
+	}
+
+	dbConnMaxIdleTime, err := parseDurationConfig(
+		v.GetString("db.conn-max-idle-time"),
+		"db.conn-max-idle-time",
+	)
+	if err != nil {
+		return appConfig{}, err
+	}
+
+	cfg.DBConnMaxLifetime = dbConnMaxLifetime
+	cfg.DBConnMaxIdleTime = dbConnMaxIdleTime
 
 	if cfg.HTTPAddr == "" {
 		return appConfig{}, fmt.Errorf("http-addr must not be empty")
@@ -138,6 +155,14 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 	if _, err := detectStorageBackend(cfg.StorageDSN); err != nil {
 		return appConfig{}, fmt.Errorf("storage-dsn: %w", err)
+	}
+
+	if cfg.DBMaxOpenConns < 0 {
+		return appConfig{}, fmt.Errorf("db.max-open-conns must be >= 0, got %d", cfg.DBMaxOpenConns)
+	}
+
+	if cfg.DBMaxIdleConns < 0 {
+		return appConfig{}, fmt.Errorf("db.max-idle-conns must be >= 0, got %d", cfg.DBMaxIdleConns)
 	}
 
 	switch cfg.LogFormat {
@@ -188,4 +213,30 @@ func parseUint32(raw string) (uint32, error) {
 	}
 
 	return uint32(v), nil
+}
+
+// parseDurationConfig parses a duration string from configuration.
+// An empty string or "0" returns a zero duration (no limit).
+// Returns an error if the string is not a valid Go duration or is negative.
+func parseDurationConfig(raw, key string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"%s: invalid duration %q (expected a Go duration string, e.g. 30m, 1h): %w",
+			key,
+			raw,
+			err,
+		)
+	}
+
+	if d < 0 {
+		return 0, fmt.Errorf("%s: duration must be >= 0, got %q", key, raw)
+	}
+
+	return d, nil
 }
