@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/min0625/minurl/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -28,6 +29,10 @@ var configKeys = []string{
 	"otel.exporter",
 	"otel.endpoint",
 	"otel.insecure",
+	"db.max-open-conns",
+	"db.max-idle-conns",
+	"db.conn-max-lifetime",
+	"db.conn-max-idle-time",
 }
 
 type appConfig struct {
@@ -40,6 +45,12 @@ type appConfig struct {
 	OTELExporter    string
 	OTELEndpoint    string
 	OTELInsecure    bool
+	// DB pool settings. These apply to the PostgreSQL backend only.
+	// SQLite always uses a single connection regardless of these settings.
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifetime time.Duration
+	DBConnMaxIdleTime time.Duration
 }
 
 func defaultAppConfig() appConfig {
@@ -52,6 +63,12 @@ func defaultAppConfig() appConfig {
 		OTELExporter:    telemetry.ExporterStdout,
 		OTELEndpoint:    "",
 		OTELInsecure:    true,
+		// PostgreSQL connection pool defaults.
+		// SQLite always uses 1 connection; these values are ignored for SQLite.
+		DBMaxOpenConns:    25,
+		DBMaxIdleConns:    5,
+		DBConnMaxLifetime: 30 * time.Minute,
+		DBConnMaxIdleTime: 10 * time.Minute,
 	}
 }
 
@@ -71,6 +88,10 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	v.SetDefault("otel.exporter", cfg.OTELExporter)
 	v.SetDefault("otel.endpoint", cfg.OTELEndpoint)
 	v.SetDefault("otel.insecure", cfg.OTELInsecure)
+	v.SetDefault("db.max-open-conns", cfg.DBMaxOpenConns)
+	v.SetDefault("db.max-idle-conns", cfg.DBMaxIdleConns)
+	v.SetDefault("db.conn-max-lifetime", cfg.DBConnMaxLifetime.String())
+	v.SetDefault("db.conn-max-idle-time", cfg.DBConnMaxIdleTime.String())
 
 	if err := bindConfigFlags(v, cmd); err != nil {
 		return appConfig{}, err
@@ -84,6 +105,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		}
 
 		applyHyphenatedOTelConfigKeys(v, cmd)
+		applyHyphenatedDBConfigKeys(v, cmd)
 	}
 
 	cfg.HTTPAddr = v.GetString("http-addr")
@@ -95,6 +117,27 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	cfg.OTELExporter = strings.ToLower(strings.TrimSpace(v.GetString("otel.exporter")))
 	cfg.OTELEndpoint = strings.TrimSpace(v.GetString("otel.endpoint"))
 	cfg.OTELInsecure = v.GetBool("otel.insecure")
+	cfg.DBMaxOpenConns = v.GetInt("db.max-open-conns")
+	cfg.DBMaxIdleConns = v.GetInt("db.max-idle-conns")
+
+	dbConnMaxLifetime, err := parseDurationConfig(
+		v.GetString("db.conn-max-lifetime"),
+		"db.conn-max-lifetime",
+	)
+	if err != nil {
+		return appConfig{}, err
+	}
+
+	dbConnMaxIdleTime, err := parseDurationConfig(
+		v.GetString("db.conn-max-idle-time"),
+		"db.conn-max-idle-time",
+	)
+	if err != nil {
+		return appConfig{}, err
+	}
+
+	cfg.DBConnMaxLifetime = dbConnMaxLifetime
+	cfg.DBConnMaxIdleTime = dbConnMaxIdleTime
 
 	if cfg.HTTPAddr == "" {
 		return appConfig{}, fmt.Errorf("http-addr must not be empty")
@@ -112,6 +155,14 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 	if _, err := detectStorageBackend(cfg.StorageDSN); err != nil {
 		return appConfig{}, fmt.Errorf("storage-dsn: %w", err)
+	}
+
+	if cfg.DBMaxOpenConns < 0 {
+		return appConfig{}, fmt.Errorf("db.max-open-conns must be >= 0, got %d", cfg.DBMaxOpenConns)
+	}
+
+	if cfg.DBMaxIdleConns < 0 {
+		return appConfig{}, fmt.Errorf("db.max-idle-conns must be >= 0, got %d", cfg.DBMaxIdleConns)
 	}
 
 	switch cfg.LogFormat {
@@ -162,4 +213,30 @@ func parseUint32(raw string) (uint32, error) {
 	}
 
 	return uint32(v), nil
+}
+
+// parseDurationConfig parses a duration string from configuration.
+// An empty string or "0" returns a zero duration (no limit).
+// Returns an error if the string is not a valid Go duration or is negative.
+func parseDurationConfig(raw, key string) (time.Duration, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0, nil
+	}
+
+	d, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf(
+			"%s: invalid duration %q (expected a Go duration string, e.g. 30m, 1h): %w",
+			key,
+			raw,
+			err,
+		)
+	}
+
+	if d < 0 {
+		return 0, fmt.Errorf("%s: duration must be >= 0, got %q", key, raw)
+	}
+
+	return d, nil
 }

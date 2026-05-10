@@ -4,6 +4,8 @@ package main
 import (
 	"fmt"
 	"io"
+	"log/slog"
+	"net/url"
 	"strings"
 
 	"github.com/min0625/minurl/internal/service"
@@ -41,6 +43,18 @@ func detectStorageBackend(dsn string) (string, error) {
 	}
 }
 
+// postgresDSNSSLMode parses the PostgreSQL DSN as a URL and returns the value
+// of the sslmode query parameter. Returns an empty string if the DSN cannot be
+// parsed or if sslmode is not present.
+func postgresDSNSSLMode(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return ""
+	}
+
+	return u.Query().Get("sslmode")
+}
+
 func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.Closer, error) {
 	var idGen service.IDGenerator
 
@@ -68,7 +82,22 @@ func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.C
 
 	switch backend {
 	case backendPostgres:
-		pgStore, pgCounter, pgCloser, err := store.NewPostgresBackends(cfg.StorageDSN)
+		if strings.EqualFold(postgresDSNSSLMode(cfg.StorageDSN), "disable") {
+			slog.Warn(
+				"PostgreSQL DSN sslmode=disable: " +
+					"SSL is disabled and connections are unencrypted. " +
+					"Use sslmode=verify-full in production.",
+			)
+		}
+
+		dbPool := store.DBPoolConfig{
+			MaxOpenConns:    cfg.DBMaxOpenConns,
+			MaxIdleConns:    cfg.DBMaxIdleConns,
+			ConnMaxLifetime: cfg.DBConnMaxLifetime,
+			ConnMaxIdleTime: cfg.DBConnMaxIdleTime,
+		}
+
+		pgStore, pgCounter, pgCloser, err := store.NewPostgresBackends(cfg.StorageDSN, dbPool)
 		if err != nil {
 			return nil, nil, fmt.Errorf("open postgres backends: %w", err)
 		}

@@ -147,6 +147,10 @@ Global options:
 - `--otel-exporter`: OpenTelemetry exporter — `stdout` (default) or `otlp`
 - `--otel-endpoint`: OTLP collector endpoint (required when `--otel-exporter=otlp`)
 - `--otel-insecure`: allow insecure OTLP connection (default `true`)
+- `--db-max-open-conns`: max open DB connections, PostgreSQL only (default `25`, `0` = unlimited)
+- `--db-max-idle-conns`: max idle DB connections in pool, PostgreSQL only (default `5`)
+- `--db-conn-max-lifetime`: max connection lifetime, PostgreSQL only (default `30m`, `0` = no limit)
+- `--db-conn-max-idle-time`: max connection idle time, PostgreSQL only (default `10m`, `0` = no limit)
 
 Configuration precedence is:
 
@@ -171,6 +175,10 @@ Environment variable names:
 - `MINURL_OTEL_EXPORTER`
 - `MINURL_OTEL_ENDPOINT`
 - `MINURL_OTEL_INSECURE`
+- `MINURL_DB_MAX_OPEN_CONNS`
+- `MINURL_DB_MAX_IDLE_CONNS`
+- `MINURL_DB_CONN_MAX_LIFETIME`
+- `MINURL_DB_CONN_MAX_IDLE_TIME`
 
 Example (env):
 
@@ -190,6 +198,63 @@ PostgreSQL example (flags):
 ```bash
 # Note: sslmode=disable is for local development only; use sslmode=require (or verify-full) in production.
 go run ./cmd/minurl --storage-dsn "postgres://localhost:5432/minurl?sslmode=disable"
+```
+
+### Storage DSN and SSL configuration
+
+MinURL auto-detects the storage backend from the DSN scheme.
+
+**SQLite** (development and small deployments):
+```
+sqlite3://minurl.sqlite3              relative path
+sqlite3://var/data/minurl.sqlite3     relative subdirectory
+sqlite3:///absolute/path/minurl.db    absolute path (three slashes)
+```
+
+**PostgreSQL** — choose `sslmode` appropriate for your environment:
+
+| sslmode | When to use |
+|---------|------------|
+| `disable` | Local development / loopback only. **Never use in production.** |
+| `require` | SSL required, server certificate **not** verified. Protects against passive eavesdropping only; does not prevent MITM attacks. |
+| `verify-ca` | SSL required, CA signature verified. Acceptable for internal networks with a private CA. |
+| `verify-full` | SSL required, CA + hostname verified. **Recommended for production.** |
+
+> **Warning**: When the server detects `sslmode=disable` in the PostgreSQL DSN, it logs a warning at startup. Do not ignore this warning in production.
+
+```bash
+# Production
+MINURL_STORAGE_DSN="postgres://user:password@db.example.com:5432/minurl?sslmode=verify-full"
+
+# Staging / private network with known CA
+MINURL_STORAGE_DSN="postgres://user:password@db.example.com:5432/minurl?sslmode=require"
+
+# Local development only
+MINURL_STORAGE_DSN="postgres://user:password@localhost:5432/minurl?sslmode=disable"
+```
+
+### DB connection pool configuration
+
+Connection pool settings apply to the **PostgreSQL backend only**. SQLite always uses a single connection.
+
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--db-max-open-conns` | `MINURL_DB_MAX_OPEN_CONNS` | `25` | Max open connections. `0` = unlimited (not recommended). |
+| `--db-max-idle-conns` | `MINURL_DB_MAX_IDLE_CONNS` | `5` | Max idle connections retained. `0` = none retained. |
+| `--db-conn-max-lifetime` | `MINURL_DB_CONN_MAX_LIFETIME` | `30m` | Max connection lifetime. `0` = no limit. |
+| `--db-conn-max-idle-time` | `MINURL_DB_CONN_MAX_IDLE_TIME` | `10m` | Max idle connection lifetime. `0` = no limit. |
+
+**Tuning guidelines**:
+- Typical production PostgreSQL: `max-open-conns=25`, `max-idle-conns=5`, `lifetime=30m`, `idle-time=10m`
+- High-concurrency (many parallel requests): increase `max-open-conns` proportionally to your DB's `max_connections` and number of service instances
+- Set `conn-max-lifetime` to avoid connections being closed by the DB server's idle timeout
+
+Via config file:
+```yaml
+db-max-open-conns: 25
+db-max-idle-conns: 5
+db-conn-max-lifetime: "30m"
+db-conn-max-idle-time: "10m"
 ```
 
 Example (flags):
@@ -216,6 +281,10 @@ otel-service-name: "minurl"
 otel-exporter: "stdout"
 otel-endpoint: ""
 otel-insecure: true
+db-max-open-conns: 25
+db-max-idle-conns: 5
+db-conn-max-lifetime: "30m"
+db-conn-max-idle-time: "10m"
 ```
 
 Then run:

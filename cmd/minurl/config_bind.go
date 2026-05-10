@@ -60,6 +60,28 @@ func applyHyphenatedOTelConfigKeys(v *viper.Viper, cmd *cobra.Command) {
 	}
 }
 
+func applyHyphenatedDBConfigKeys(v *viper.Viper, cmd *cobra.Command) {
+	if flag := lookupFlag(cmd, "db-max-open-conns"); flag != nil &&
+		!flag.Changed && v.IsSet("db-max-open-conns") {
+		v.Set("db.max-open-conns", v.Get("db-max-open-conns"))
+	}
+
+	if flag := lookupFlag(cmd, "db-max-idle-conns"); flag != nil &&
+		!flag.Changed && v.IsSet("db-max-idle-conns") {
+		v.Set("db.max-idle-conns", v.Get("db-max-idle-conns"))
+	}
+
+	if flag := lookupFlag(cmd, "db-conn-max-lifetime"); flag != nil &&
+		!flag.Changed && v.IsSet("db-conn-max-lifetime") {
+		v.Set("db.conn-max-lifetime", v.Get("db-conn-max-lifetime"))
+	}
+
+	if flag := lookupFlag(cmd, "db-conn-max-idle-time"); flag != nil &&
+		!flag.Changed && v.IsSet("db-conn-max-idle-time") {
+		v.Set("db.conn-max-idle-time", v.Get("db-conn-max-idle-time"))
+	}
+}
+
 func lookupFlag(cmd *cobra.Command, name string) *pflag.Flag {
 	if f := cmd.Flags().Lookup(name); f != nil {
 		return f
