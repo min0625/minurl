@@ -96,9 +96,16 @@ This is guidance, not a strict requirement, and can be adjusted per task.
 
 ## Database Migration Strategy
 
-Both SQLite and PostgreSQL use in-process migrations (no external migration tool):
+Both SQLite and PostgreSQL use [golang-migrate/migrate v4](https://github.com/golang-migrate/migrate) for versioned, in-process migrations:
 
-- **SQLite**: `migrateSQLite()` in `internal/store/sqlite.go`. New columns use `ALTER TABLE ... ADD COLUMN` (duplicate-column errors are silently ignored for forward compatibility).
-- **PostgreSQL**: `migratePostgres()` in `internal/store/postgres.go`. New columns use `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`.
+- **Migration files**: `internal/store/migrations/sqlite/` and `internal/store/migrations/postgres/`
+- **Format**: `000001_<name>.up.sql` / `000001_<name>.down.sql`
+- **Embed**: `//go:embed` in `internal/store/migrations.go` — no external files needed at runtime
+- **Tracking**: golang-migrate creates a `schema_migrations` table in each database
+- **Drivers**: `github.com/golang-migrate/migrate/v4/database/sqlite` (modernc, no cgo) for SQLite; `github.com/golang-migrate/migrate/v4/database/postgres` for PostgreSQL
+- **`m.Close()` is NOT called** after `Up()` — the database drivers wrap a caller-owned `*sql.DB` and calling Close() would close the shared connection
 
-When adding new columns: add to both migration functions, update `CreateIfAbsent` and `GetByID` in both `internal/store/storage.go` (SQLite) and `internal/store/postgres.go`.
+When adding new columns:
+1. Add a new `000002_<name>.up.sql` + `down.sql` pair under **both** `migrations/sqlite/` and `migrations/postgres/`
+2. Update `CreateIfAbsent()` and `GetByID()` in `internal/store/storage.go` (SQLite) and `internal/store/postgres.go`
+3. Update `internal/testhelpers/storage.go` if the field needs special handling

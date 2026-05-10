@@ -55,14 +55,22 @@ Defined in `internal/service/model.go`:
 - PostgreSQL storage: `internal/store/postgres.go`
 - Test storage (in-memory): `internal/testhelpers/storage.go`
 
+### Migration System
+
+Migrations are managed by **[golang-migrate/migrate v4](https://github.com/golang-migrate/migrate)** with SQL files embedded in the binary via `//go:embed`.
+
+- Migration files: `internal/store/migrations/sqlite/` and `internal/store/migrations/postgres/`
+- Naming: `000001_<name>.up.sql` / `000001_<name>.down.sql`
+- Shared helper: `runMigrations()` in `internal/store/migrations.go`
+- `m.Close()` is **not** called — the DB drivers wrap a caller-owned `*sql.DB`; calling Close() would close the shared connection
+
 ### Adding New Columns
 
 When adding a new column to `short_urls`:
-1. Add `ALTER TABLE short_urls ADD COLUMN ...` to `migrateSQLite()` in `internal/store/sqlite.go` — errors are silently ignored (SQLite forward-compat).
-2. Add `ALTER TABLE short_urls ADD COLUMN IF NOT EXISTS ...` to `migratePostgres()` in `internal/store/postgres.go`.
-3. Update `CreateIfAbsent()` in both `internal/store/storage.go` and `internal/store/postgres.go`.
-4. Update `GetByID()` in both files.
-5. Update `internal/testhelpers/storage.go` if the field needs special handling.
+1. Add `000002_<name>.up.sql` + `down.sql` to **both** `internal/store/migrations/sqlite/` and `internal/store/migrations/postgres/`
+2. Update `CreateIfAbsent()` in both `internal/store/storage.go` and `internal/store/postgres.go`.
+3. Update `GetByID()` in both files.
+4. Update `internal/testhelpers/storage.go` if the field needs special handling.
 
 ## Make Targets Reference
 

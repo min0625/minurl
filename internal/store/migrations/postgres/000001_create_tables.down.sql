@@ -1,0 +1,3 @@
+DROP TABLE IF EXISTS counters;
+
+DROP TABLE IF EXISTS short_urls;

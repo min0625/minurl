@@ -14,6 +14,10 @@ Core short URL API is implemented and running:
 - Both short URL records and `id counter` are persisted in the configured backend
 - Container build target binary: `minurl`
 
+## Database migrations
+
+SQLite and PostgreSQL use embedded `golang-migrate` migrations. New databases are migrated automatically on startup.
+
 ## API Documentation
 
 API details are maintained in OpenAPI files under `docs/openapi/`:
