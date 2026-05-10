@@ -51,7 +51,7 @@ Choose a branch name that reflects the purpose of the change. Always use **lower
 | `fix/` | A bug fix |
 | `docs/` | Documentation-only changes |
 | `chore/` | Maintenance, tooling, dependency updates |
-| `refactor/` | Code restructuring without behaviour change |
+| `refactor/` | Code restructuring without behavior change |
 | `test/` | Adding or improving tests |
 | `ci/` | CI/CD pipeline changes |
 | `build/` | Build system or Dockerfile changes |
@@ -211,14 +211,14 @@ git log origin/<branch-name> --oneline -5
 
 ### 7a. Using the GitHub MCP Tool (Preferred)
 
-Use the `mcp_github_github_create_pull_request` tool. This is the **preferred method** when an MCP-capable agent is running, as it does not require the `gh` CLI to be installed.
+Use the `mcp_github_create_pull_request` tool. This is the **preferred method** when an MCP-capable agent is running, as it does not require the `gh` CLI to be installed.
 
 Required parameters:
 
 | Parameter | Value |
 |---|---|
 | `owner` | Repository owner (e.g., `min0625`) |
-| `repo` | Repository name (e.g., `hello-go`) |
+| `repo` | Repository name (e.g., `minurl`) |
 | `title` | PR title (see naming rules below) |
 | `body` | PR description (use the template below) |
 | `head` | Your feature branch name |
@@ -285,7 +285,7 @@ Using the MCP tool (preferred):
 ```
 mcp_github_github_create_pull_request(
   owner = "min0625",
-  repo  = "hello-go",
+  repo  = "minurl",
   title = "feat: add JSON output flag to CLI",
   head  = "feat/add-json-output",
   base  = "main",
@@ -302,7 +302,6 @@ Add a `--json` flag that outputs the greeting in JSON format instead of plain te
 ## How to Test
 
 1. Run `go run . --json`
-2. Verify output is valid JSON: `{\"message\": \"Hello, World!\"}`
 
 ## Checklist
 
@@ -322,7 +321,7 @@ After creation, confirm the PR exists and is correct.
 ```
 mcp_github_github_pull_request_read(
   owner      = "min0625",
-  repo       = "hello-go",
+  repo       = "minurl",
   pullNumber = <PR number returned from Step 7>
 )
 ```
@@ -363,7 +362,7 @@ git push
 
 ## Naming Convention Quick Reference
 
-| Artefact | Format | Example |
+| Artifact | Format | Example |
 |---|---|---|
 | Branch | `<type>/<kebab-description>` | `feat/add-json-output` |
 | Commit | `<type>(<scope>): <description>` | `feat: add JSON output flag` |
