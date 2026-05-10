@@ -4,18 +4,25 @@
 package store
 
 import (
+	"context"
 	"database/sql"
+	"embed"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/url"
 	"strings"
+	"time"
 
 	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/min0625/minurl/internal/service"
 	_ "modernc.org/sqlite" // register sqlite driver
 )
 
-const shortURLCounterName = "short_url"
+//go:embed migrations/sqlite/*.sql
+var sqliteMigrations embed.FS
 
 type sqliteDBCloser struct {
 	db *sql.DB
@@ -120,4 +127,202 @@ func parseSQLiteDSN(dsn string) (string, error) {
 	}
 
 	return filePath, nil
+}
+
+// SQLiteShortURLStorage is a SQLite-backed storage implementation.
+type SQLiteShortURLStorage struct {
+	db *sql.DB
+}
+
+// CreateIfAbsent stores the entry if the ID does not already exist.
+// Returns true if the entry was inserted, false if it already existed.
+func (s *SQLiteShortURLStorage) CreateIfAbsent(
+	ctx context.Context,
+	entry service.ShortURL,
+) (bool, error) {
+	var expireTimeStr *string
+
+	if entry.ExpireTime != nil {
+		formatted := entry.ExpireTime.UTC().Format(time.RFC3339Nano)
+		expireTimeStr = &formatted
+	}
+
+	result, err := s.db.ExecContext(
+		ctx,
+		`INSERT OR IGNORE INTO short_urls (id, original_url, create_time, expire_time) VALUES (?, ?, ?, ?)`,
+		entry.ID,
+		entry.OriginalURL,
+		entry.CreateTime.UTC().Format(time.RFC3339Nano),
+		expireTimeStr,
+	)
+	if err != nil {
+		return false, fmt.Errorf("insert short url: %w", err)
+	}
+
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("rows affected: %w", err)
+	}
+
+	return rows > 0, nil
+}
+
+// GetByID returns the short URL with the given ID.
+func (s *SQLiteShortURLStorage) GetByID(
+	ctx context.Context,
+	id string,
+) (service.ShortURL, bool, error) {
+	var entry service.ShortURL
+
+	var createTimeStr string
+
+	var expireTimeStr *string
+
+	err := s.db.QueryRowContext(
+		ctx,
+		`SELECT id, original_url, create_time, expire_time FROM short_urls WHERE id = ?`,
+		id,
+	).Scan(&entry.ID, &entry.OriginalURL, &createTimeStr, &expireTimeStr)
+
+	if errors.Is(err, sql.ErrNoRows) {
+		return service.ShortURL{}, false, nil
+	}
+
+	if err != nil {
+		return service.ShortURL{}, false, fmt.Errorf("query short url: %w", err)
+	}
+
+	entry.CreateTime, err = time.Parse(time.RFC3339Nano, createTimeStr)
+	if err != nil {
+		return service.ShortURL{}, false, fmt.Errorf("parse create_time %q: %w", createTimeStr, err)
+	}
+
+	if expireTimeStr != nil {
+		t, parseErr := time.Parse(time.RFC3339Nano, *expireTimeStr)
+		if parseErr != nil {
+			return service.ShortURL{}, false, fmt.Errorf(
+				"parse expire_time %q: %w",
+				*expireTimeStr,
+				parseErr,
+			)
+		}
+
+		entry.ExpireTime = &t
+	}
+
+	return entry, true, nil
+}
+
+// Close releases the database connection.
+func (s *SQLiteShortURLStorage) Close() error {
+	return s.db.Close()
+}
+
+// SQLiteShortURLCounter is a SQLite-backed counter implementation.
+type SQLiteShortURLCounter struct {
+	db *sql.DB
+}
+
+// Close releases the database connection.
+func (c *SQLiteShortURLCounter) Close() error {
+	return c.db.Close()
+}
+
+// Next returns the next monotonic sequence value.
+func (c *SQLiteShortURLCounter) Next(ctx context.Context) (uint64, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return 0, err
+		}
+
+		tx, err := c.db.BeginTx(ctx, nil)
+		if err != nil {
+			return 0, fmt.Errorf("begin tx: %w", err)
+		}
+
+		next, committed, err := c.nextInTx(ctx, tx)
+		if err != nil {
+			_ = tx.Rollback()
+
+			return 0, err
+		}
+
+		if !committed {
+			_ = tx.Rollback()
+
+			continue
+		}
+
+		if err := tx.Commit(); err != nil {
+			return 0, fmt.Errorf("commit tx: %w", err)
+		}
+
+		return next, nil
+	}
+}
+
+func (c *SQLiteShortURLCounter) nextInTx(
+	ctx context.Context,
+	tx *sql.Tx,
+) (uint64, bool, error) {
+	var current uint64
+
+	err := tx.QueryRowContext(
+		ctx,
+		`SELECT value FROM counters WHERE name = ?`,
+		shortURLCounterName,
+	).Scan(&current)
+	if errors.Is(err, sql.ErrNoRows) {
+		result, insertErr := tx.ExecContext(
+			ctx,
+			`INSERT OR IGNORE INTO counters (name, value) VALUES (?, 1)`,
+			shortURLCounterName,
+		)
+		if insertErr != nil {
+			return 0, false, fmt.Errorf("initialize counter row: %w", insertErr)
+		}
+
+		affectedRows, affectedErr := result.RowsAffected()
+		if affectedErr != nil {
+			return 0, false, fmt.Errorf("rows affected: %w", affectedErr)
+		}
+
+		if affectedRows == 0 {
+			return 0, false, nil
+		}
+
+		return 1, true, nil
+	}
+
+	if err != nil {
+		return 0, false, fmt.Errorf("read counter value: %w", err)
+	}
+
+	if current == math.MaxUint64 {
+		return 0, false, fmt.Errorf("short id sequence exhausted")
+	}
+
+	next := current + 1
+
+	result, err := tx.ExecContext(
+		ctx,
+		`UPDATE counters SET value = ? WHERE name = ? AND value = ?`,
+		next,
+		shortURLCounterName,
+		current,
+	)
+	if err != nil {
+		return 0, false, fmt.Errorf("update counter value: %w", err)
+	}
+
+	affectedRows, err := result.RowsAffected()
+	if err != nil {
+		return 0, false, fmt.Errorf("rows affected: %w", err)
+	}
+
+	if affectedRows == 0 {
+		return 0, false, nil
+	}
+
+	return next, true, nil
 }

@@ -5,6 +5,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,9 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib" // register pgx driver
 	"github.com/min0625/minurl/internal/service"
 )
+
+//go:embed migrations/postgres/*.sql
+var postgresMigrations embed.FS
 
 // postgresDBCloser wraps a shared sql.DB and closes it on Close.
 type postgresDBCloser struct {
@@ -29,8 +33,9 @@ func (c *postgresDBCloser) Close() error {
 // and counter backends that share the same pool.
 func NewPostgresBackends(
 	dsn string,
+	pool DBPoolConfig,
 ) (*PostgresShortURLStorage, *PostgresShortURLCounter, io.Closer, error) {
-	db, err := openPostgresDB(dsn)
+	db, err := openPostgresDB(dsn, pool)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -42,15 +47,16 @@ func NewPostgresBackends(
 	return storage, counter, closer, nil
 }
 
-func openPostgresDB(dsn string) (*sql.DB, error) {
+func openPostgresDB(dsn string, pool DBPoolConfig) (*sql.DB, error) {
 	db, err := sql.Open("pgx", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open postgres database: %w", err)
 	}
 
-	// Limit connections to avoid exhausting the Postgres server under load.
-	db.SetMaxOpenConns(25)
-	db.SetMaxIdleConns(5)
+	db.SetMaxOpenConns(pool.MaxOpenConns)
+	db.SetMaxIdleConns(pool.MaxIdleConns)
+	db.SetConnMaxLifetime(pool.ConnMaxLifetime)
+	db.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
 
 	if err := migratePostgres(db); err != nil {
 		_ = db.Close()

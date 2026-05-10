@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/min0625/minurl/internal/telemetry"
 	"github.com/spf13/cobra"
@@ -28,6 +29,10 @@ var configKeys = []string{
 	"otel.exporter",
 	"otel.endpoint",
 	"otel.insecure",
+	"db.max-open-conns",
+	"db.max-idle-conns",
+	"db.conn-max-lifetime",
+	"db.conn-max-idle-time",
 }
 
 type appConfig struct {
@@ -40,6 +45,12 @@ type appConfig struct {
 	OTELExporter    string
 	OTELEndpoint    string
 	OTELInsecure    bool
+	// DB pool settings. These apply to the PostgreSQL backend only.
+	// SQLite always uses a single connection regardless of these settings.
+	DBMaxOpenConns    int
+	DBMaxIdleConns    int
+	DBConnMaxLifetime time.Duration
+	DBConnMaxIdleTime time.Duration
 }
 
 func defaultAppConfig() appConfig {
@@ -52,6 +63,12 @@ func defaultAppConfig() appConfig {
 		OTELExporter:    telemetry.ExporterStdout,
 		OTELEndpoint:    "",
 		OTELInsecure:    true,
+		// PostgreSQL connection pool defaults.
+		// SQLite always uses 1 connection; these values are ignored for SQLite.
+		DBMaxOpenConns:    25,
+		DBMaxIdleConns:    5,
+		DBConnMaxLifetime: 30 * time.Minute,
+		DBConnMaxIdleTime: 10 * time.Minute,
 	}
 }
 
@@ -71,6 +88,10 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	v.SetDefault("otel.exporter", cfg.OTELExporter)
 	v.SetDefault("otel.endpoint", cfg.OTELEndpoint)
 	v.SetDefault("otel.insecure", cfg.OTELInsecure)
+	v.SetDefault("db.max-open-conns", cfg.DBMaxOpenConns)
+	v.SetDefault("db.max-idle-conns", cfg.DBMaxIdleConns)
+	v.SetDefault("db.conn-max-lifetime", cfg.DBConnMaxLifetime.String())
+	v.SetDefault("db.conn-max-idle-time", cfg.DBConnMaxIdleTime.String())
 
 	if err := bindConfigFlags(v, cmd); err != nil {
 		return appConfig{}, err
@@ -84,6 +105,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		}
 
 		applyHyphenatedOTelConfigKeys(v, cmd)
+		applyHyphenatedDBConfigKeys(v, cmd)
 	}
 
 	cfg.HTTPAddr = v.GetString("http-addr")
@@ -95,6 +117,10 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	cfg.OTELExporter = strings.ToLower(strings.TrimSpace(v.GetString("otel.exporter")))
 	cfg.OTELEndpoint = strings.TrimSpace(v.GetString("otel.endpoint"))
 	cfg.OTELInsecure = v.GetBool("otel.insecure")
+	cfg.DBMaxOpenConns = v.GetInt("db.max-open-conns")
+	cfg.DBMaxIdleConns = v.GetInt("db.max-idle-conns")
+	cfg.DBConnMaxLifetime = v.GetDuration("db.conn-max-lifetime")
+	cfg.DBConnMaxIdleTime = v.GetDuration("db.conn-max-idle-time")
 
 	if cfg.HTTPAddr == "" {
 		return appConfig{}, fmt.Errorf("http-addr must not be empty")

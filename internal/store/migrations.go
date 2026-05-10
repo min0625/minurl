@@ -3,20 +3,36 @@
 package store
 
 import (
-	"embed"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database"
 	"github.com/golang-migrate/migrate/v4/source"
 )
 
-//go:embed migrations/sqlite/*.sql
-var sqliteMigrations embed.FS
+// shortURLCounterName is the name used to identify the short URL counter row
+// in the counters table. Shared across all storage backends.
+const shortURLCounterName = "short_url"
 
-//go:embed migrations/postgres/*.sql
-var postgresMigrations embed.FS
+// DBPoolConfig holds database connection pool settings.
+// These settings apply to the PostgreSQL backend only.
+// SQLite always uses a single connection regardless of these settings.
+type DBPoolConfig struct {
+	// MaxOpenConns sets the maximum number of open connections to the database.
+	// 0 means unlimited (not recommended for PostgreSQL).
+	MaxOpenConns int
+	// MaxIdleConns sets the maximum number of idle connections retained in the pool.
+	// 0 means no idle connections are retained.
+	MaxIdleConns int
+	// ConnMaxLifetime sets the maximum duration a connection may be reused.
+	// 0 means no limit (connections are never closed due to age).
+	ConnMaxLifetime time.Duration
+	// ConnMaxIdleTime sets the maximum duration a connection may sit idle.
+	// 0 means no limit (idle connections are never closed).
+	ConnMaxIdleTime time.Duration
+}
 
 // runMigrations applies all pending up migrations using the provided source
 // and database drivers. ErrNoChange is treated as success.

@@ -86,6 +86,26 @@ func newRootCommand() *cobra.Command {
 		String("otel-exporter", "stdout", "OpenTelemetry exporter: stdout or otlp")
 	cmd.PersistentFlags().String("otel-endpoint", "", "OTLP collector endpoint")
 	cmd.PersistentFlags().Bool("otel-insecure", true, "allow insecure OTLP connection")
+	cmd.PersistentFlags().Int(
+		"db-max-open-conns",
+		25,
+		"max open DB connections, PostgreSQL only (0 = unlimited, not recommended)",
+	)
+	cmd.PersistentFlags().Int(
+		"db-max-idle-conns",
+		5,
+		"max idle DB connections retained in pool, PostgreSQL only (0 = none retained)",
+	)
+	cmd.PersistentFlags().String(
+		"db-conn-max-lifetime",
+		"30m",
+		"max connection lifetime, PostgreSQL only (0 = no limit, e.g. 30m, 1h)",
+	)
+	cmd.PersistentFlags().String(
+		"db-conn-max-idle-time",
+		"10m",
+		"max connection idle time, PostgreSQL only (0 = no limit, e.g. 10m, 30m)",
+	)
 	cmd.AddCommand(newOpenAPICommand())
 	cmd.AddCommand(newVersionCommand())
 

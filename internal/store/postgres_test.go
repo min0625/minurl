@@ -75,7 +75,7 @@ func TestOpenPostgresDBSetsConnectionPool(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	db, err := openPostgresDB(testPostgresDSN)
+	db, err := openPostgresDB(testPostgresDSN, DBPoolConfig{MaxOpenConns: 25, MaxIdleConns: 5})
 	if err != nil {
 		t.Fatalf("openPostgresDB() error = %v", err)
 	}
@@ -117,7 +117,7 @@ func TestPostgresShortURLStorageCreateIfAbsent(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -148,7 +148,7 @@ func TestPostgresShortURLStorageCreateIfAbsentConflict(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -189,7 +189,7 @@ func TestPostgresShortURLStorageGetByID(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -236,7 +236,7 @@ func TestPostgresShortURLStorageGetByIDNotFound(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -260,7 +260,7 @@ func TestPostgresShortURLStorageGetByIDNotFound(t *testing.T) {
 func TestPostgresShortURLCounterNext(t *testing.T) {
 	skipIfNoIntegration(t)
 
-	_, counter, closer, err := NewPostgresBackends(testPostgresDSN)
+	_, counter, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -303,7 +303,7 @@ func TestNewPostgresBackends(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, counter, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, counter, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -347,7 +347,7 @@ func TestPostgresShortURLStorageExpireTimeRoundTrip(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
@@ -398,7 +398,7 @@ func TestPostgresShortURLStorageNilExpireTimeRoundTrip(t *testing.T) {
 	t.Parallel()
 	skipIfNoIntegration(t)
 
-	storage, _, closer, err := NewPostgresBackends(testPostgresDSN)
+	storage, _, closer, err := NewPostgresBackends(testPostgresDSN, DBPoolConfig{})
 	if err != nil {
 		t.Fatalf("NewPostgresBackends() error = %v", err)
 	}
