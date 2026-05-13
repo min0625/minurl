@@ -19,7 +19,7 @@ This repository is a Go short URL service. The core API is fully implemented —
 - Go version: 1.26.2
 - Main module: `github.com/min0625/minurl`
 - Main entry point: `cmd/minurl/main.go`
-- Docker output binary: `minurl`
+- CLI subcommands: `openapi`, `version`, `healthcheck`
 - Deployment configs: `deploy/docker-compose/` — includes PostgreSQL and SQLite example configurations (`.example.yml` format; copy and customize before use)
 - HTTP listen port: `:8888` (default)
 - Storage backends: SQLite (`sqlite3://`) and PostgreSQL (`postgres://`), auto-detected from DSN scheme
@@ -39,6 +39,20 @@ The `ShortURL` struct (defined in `internal/service/model.go`) has these fields:
 | `create_time` | time.Time | No (readOnly) | Set by server on creation. |
 
 **Expiry behavior**: `Get()` and `:redirect` return `not found` (false) for expired URLs. The store layer always returns the raw row; expiry is enforced in `internal/service/short_url.go`.
+
+## Health Check Endpoints
+
+Health endpoints are mounted directly on the chi router (not via Huma) and do **not** appear in the OpenAPI schema.
+
+| Endpoint | Probe type | Checks |
+|----------|-----------|--------|
+| `GET /livez` | Liveness | HTTP server responds |
+| `GET /readyz` | Readiness | `db.PingContext` |
+| `GET /startupz` | Startup | Same as `/readyz` |
+
+- Implemented via `github.com/alexliesenfeld/health` in `internal/handler/health.go`.
+- `store.CloserPinger` interface (`internal/store/pinger.go`) is implemented by both SQLite and Postgres backends and passed through `service_factory → server → RegisterHealthHandlers`.
+- The `minurl healthcheck` CLI subcommand (`cmd/minurl/command_healthcheck.go`) GETs `/livez` and exits 0/1 — used as Docker `HEALTHCHECK CMD` in the distroless container.
 
 ## Useful Commands
 

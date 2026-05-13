@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/min0625/minurl/internal/handler"
 	"github.com/min0625/minurl/internal/httpserver"
 	"github.com/min0625/minurl/internal/middleware"
 	"github.com/min0625/minurl/internal/telemetry"
@@ -56,6 +57,7 @@ func runServer(cfg appConfig) error {
 	}()
 
 	r, _ := httpserver.BuildAPI(svc, version)
+	handler.RegisterHealthHandlers(r, closer)
 
 	h := telemetry.WrapHTTPHandler(r, otelCfg)
 

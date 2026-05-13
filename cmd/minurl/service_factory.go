@@ -3,7 +3,6 @@ package main
 
 import (
 	"fmt"
-	"io"
 	"log/slog"
 	"net/url"
 	"strings"
@@ -55,7 +54,9 @@ func postgresDSNSSLMode(dsn string) string {
 	return u.Query().Get("sslmode")
 }
 
-func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.Closer, error) {
+func newShortURLServiceFromConfig(
+	cfg appConfig,
+) (*service.ShortURLService, store.CloserPinger, error) {
 	var idGen service.IDGenerator
 
 	if cfg.IDSeed != "" {
@@ -72,7 +73,7 @@ func newShortURLServiceFromConfig(cfg appConfig) (*service.ShortURLService, io.C
 	var (
 		svcStore   service.ShortURLStorage
 		svcCounter service.ShortURLCounter
-		closer     io.Closer
+		closer     store.CloserPinger
 	)
 
 	backend, err := detectStorageBackend(cfg.StorageDSN)

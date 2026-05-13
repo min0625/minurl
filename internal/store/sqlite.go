@@ -9,7 +9,6 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"net/url"
 	"strings"
@@ -32,6 +31,10 @@ func (c *sqliteDBCloser) Close() error {
 	return c.db.Close()
 }
 
+func (c *sqliteDBCloser) PingContext(ctx context.Context) error {
+	return c.db.PingContext(ctx)
+}
+
 // NewSQLiteBackends opens a single SQLite connection and returns storage and
 // counter backends that share the same database.
 //
@@ -43,7 +46,7 @@ func (c *sqliteDBCloser) Close() error {
 //	sqlite3://minurl.sqlite3?cache=shared
 func NewSQLiteBackends(
 	dsn string,
-) (*SQLiteShortURLStorage, *SQLiteShortURLCounter, io.Closer, error) {
+) (*SQLiteShortURLStorage, *SQLiteShortURLCounter, CloserPinger, error) {
 	db, err := openSQLiteDB(dsn)
 	if err != nil {
 		return nil, nil, nil, err
