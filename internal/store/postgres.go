@@ -8,7 +8,6 @@ import (
 	"embed"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
@@ -29,12 +28,16 @@ func (c *postgresDBCloser) Close() error {
 	return c.db.Close()
 }
 
+func (c *postgresDBCloser) PingContext(ctx context.Context) error {
+	return c.db.PingContext(ctx)
+}
+
 // NewPostgresBackends opens a PostgreSQL connection pool and returns storage
 // and counter backends that share the same pool.
 func NewPostgresBackends(
 	dsn string,
 	pool DBPoolConfig,
-) (*PostgresShortURLStorage, *PostgresShortURLCounter, io.Closer, error) {
+) (*PostgresShortURLStorage, *PostgresShortURLCounter, CloserPinger, error) {
 	db, err := openPostgresDB(dsn, pool)
 	if err != nil {
 		return nil, nil, nil, err

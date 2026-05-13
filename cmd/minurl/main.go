@@ -108,6 +108,7 @@ func newRootCommand() *cobra.Command {
 	)
 	cmd.AddCommand(newOpenAPICommand())
 	cmd.AddCommand(newVersionCommand())
+	cmd.AddCommand(newHealthCheckCommand())
 
 	return cmd
 }
@@ -119,7 +120,7 @@ func requiresRuntimeConfig(cmd *cobra.Command) bool {
 
 	name := cmd.Name()
 
-	return name != "openapi" && name != "version"
+	return name != "openapi" && name != "version" && name != "healthcheck"
 }
 
 func validateConfigPath(path string) error {

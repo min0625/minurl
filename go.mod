@@ -3,6 +3,7 @@ module github.com/min0625/minurl
 go 1.26.2
 
 require (
+	github.com/alexliesenfeld/health v0.8.1
 	github.com/danielgtaylor/huma/v2 v2.37.3
 	github.com/go-chi/chi/v5 v5.2.5
 	github.com/go-playground/validator/v10 v10.30.1

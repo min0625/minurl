@@ -20,7 +20,7 @@ ENV MINURL_STORAGE_DSN=sqlite3:///data/minurl.sqlite3
 VOLUME ["/data"]
 EXPOSE 8888
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
-  CMD ["/minurl", "version"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD ["/minurl", "healthcheck"]
 
 ENTRYPOINT ["/minurl"]

@@ -9,7 +9,7 @@ Core short URL API is implemented and running:
 - Entry point: `cmd/minurl/main.go`
 - Runtime behavior:
 	- Runs HTTP API server by default on `:8888`
-	- Provides CLI subcommands: `openapi`, `version`
+	- Provides CLI subcommands: `openapi`, `version`, `healthcheck`
 - Storage backend: SQLite (`sqlite3://`) or PostgreSQL (`postgres://`), selected via `--storage-dsn`
 - Both short URL records and `id counter` are persisted in the configured backend
 - Container build target binary: `minurl`
@@ -76,6 +76,26 @@ Location: https://example.com/very/long/url
 ```
 
 > Returns `404 Not Found` if the short URL does not exist or has expired.
+
+## Health Check Endpoints
+
+MinURL exposes three health check endpoints for use with container orchestration and monitoring tools. These endpoints are **not** part of the OpenAPI spec — they are infrastructure endpoints, not business API.
+
+| Endpoint | Purpose | Checks |
+|----------|---------|--------|
+| `GET /livez` | Liveness — is the process alive? | HTTP server responds |
+| `GET /readyz` | Readiness — can traffic be served? | DB `PingContext` |
+| `GET /startupz` | Startup — has initialization completed? | Same as `/readyz` |
+
+All endpoints return JSON (`{"status":"up"}` / `{"status":"down","details":{...}}`) with HTTP 200 or 503.
+
+**`minurl healthcheck` CLI command** — for use as a Docker `HEALTHCHECK` in distroless containers (no `curl`/`wget` available):
+
+```
+minurl healthcheck [--addr http://localhost:8888]
+```
+
+Exits 0 if `/livez` returns 200, exits 1 otherwise.
 
 ## Short URL Expiry
 
