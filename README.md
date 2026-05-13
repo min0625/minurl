@@ -400,6 +400,48 @@ docker-compose -f deploy/docker-compose/docker-compose.sqlite.yml up
   - **Production**: Always use `sslmode=require` or `sslmode=verify-full` to enforce encrypted connections.
   - The example file includes comments on how to configure this per environment.
 
+### Deployment with Kubernetes
+
+Example Kubernetes manifests are available in `deploy/kubernetes/`:
+
+- `minurl-sqlite.example.yaml` — SQLite backend (single replica, PVC)
+- `minurl-postgres.example.yaml` — PostgreSQL backend (multi-replica)
+
+#### Setup
+
+1. Build and push your image:
+
+```bash
+docker build -t <your-registry>/minurl:latest .
+docker push <your-registry>/minurl:latest
+```
+
+2. Copy the example file for your chosen backend and update the image field:
+
+```bash
+# For PostgreSQL:
+cp deploy/kubernetes/minurl-postgres.example.yaml deploy/kubernetes/minurl-postgres.yaml
+
+# For SQLite:
+cp deploy/kubernetes/minurl-sqlite.example.yaml deploy/kubernetes/minurl-sqlite.yaml
+```
+
+3. Apply to your cluster:
+
+```bash
+# PostgreSQL:
+kubectl apply -f deploy/kubernetes/minurl-postgres.yaml
+
+# SQLite:
+kubectl apply -f deploy/kubernetes/minurl-sqlite.yaml
+```
+
+#### Notes
+
+- **SQLite**: requires `replicas: 1` due to `ReadWriteOnce` PVC. For horizontal scaling, use PostgreSQL.
+- **PostgreSQL**: the manifest does **not** include a PostgreSQL deployment. Use a managed database service or a separate Postgres StatefulSet. Create the `minurl-postgres` Secret with your DSN before applying (see USAGE comment in the manifest).
+- **Secrets**: never commit real credentials. Use `kubectl create secret` or a secrets manager.
+
 ### Observability (OpenTelemetry)
 
 The server supports OpenTelemetry distributed tracing. It is disabled by default.
@@ -531,7 +573,8 @@ then commit updates under `docs/openapi/`.
 |-- pkg/
 |   `-- kiota/go/gen/           # Kiota-generated API client
 |-- deploy/
-|   `-- docker-compose/         # Deployment examples (PostgreSQL and SQLite)
+|   |-- docker-compose/         # Docker Compose examples (PostgreSQL and SQLite)
+|   `-- kubernetes/             # Kubernetes manifest examples (PostgreSQL and SQLite)
 |-- go.mod
 |-- Dockerfile
 |-- Makefile
