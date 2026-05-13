@@ -20,7 +20,9 @@ This repository is a Go short URL service. The core API is fully implemented —
 - Main module: `github.com/min0625/minurl`
 - Main entry point: `cmd/minurl/main.go`
 - CLI subcommands: `openapi`, `version`, `healthcheck`
-- Deployment configs: `deploy/docker-compose/` — includes PostgreSQL and SQLite example configurations (`.example.yml` format; copy and customize before use)
+- Deployment configs:
+  - `deploy/docker-compose/` — Docker Compose examples (`.example.yml`; copy and customize before use)
+  - `deploy/kubernetes/` — Kubernetes manifest examples (`.example.yaml`; copy and customize before use)
 - HTTP listen port: `:8888` (default)
 - Storage backends: SQLite (`sqlite3://`) and PostgreSQL (`postgres://`), auto-detected from DSN scheme
 - Log format: `text` (default) or `json`, controlled via `--log-format` / `MINURL_LOG_FORMAT`
