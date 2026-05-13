@@ -211,7 +211,7 @@ git log origin/<branch-name> --oneline -5
 
 ### 7a. Using the GitHub MCP Tool (Preferred)
 
-Use the `mcp_github_create_pull_request` tool. This is the **preferred method** when an MCP-capable agent is running, as it does not require the `gh` CLI to be installed.
+Use the `mcp_github_github_create_pull_request` tool. This is the **preferred method** when an MCP-capable agent is running, as it does not require the `gh` CLI to be installed.
 
 Required parameters:
 

@@ -25,9 +25,8 @@ Before starting any task, answer these questions:
 |---|---|---|
 | Fetch library docs | `curl` / web search | `mcp_context7_query-docs` |
 | Create a Pull Request | `gh pr create` | `mcp_github_github_create_pull_request` |
-| Go diagnostics | `go build ./...` | `mcp_gopls_go_diagnostics` |
-| Find Go symbols | `grep` / `rg` | `mcp_gopls_go_search` |
-| Rename a symbol | editor find-replace | `mcp_gopls_go_rename_symbol` |
+| Go diagnostics | `go build ./...` | `go_diagnostics` |
+| Find Go symbols | `grep` / `rg` | `go_search` |
 | Summarize a GitHub issue | `gh issue view` | `summarize-github-issue-pr-notification` skill |
 | Address PR review comments | manual edits only | `address-pr-comments` skill |
 
