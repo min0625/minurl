@@ -14,6 +14,7 @@ import (
 const (
 	backendSQLite   = "sqlite"
 	backendPostgres = "postgres"
+	backendMySQL    = "mysql"
 )
 
 // detectStorageBackend infers the backend type from the DSN string.
@@ -23,12 +24,15 @@ const (
 //
 //	sqlite3://path  → "sqlite"
 //	postgres://...  → "postgres"
+//	mysql://...     → "mysql"
 func detectStorageBackend(dsn string) (string, error) {
 	switch {
 	case strings.HasPrefix(dsn, "postgres://"):
 		return backendPostgres, nil
 	case strings.HasPrefix(dsn, "sqlite3://"):
 		return backendSQLite, nil
+	case strings.HasPrefix(dsn, "mysql://"):
+		return backendMySQL, nil
 	default:
 		scheme := dsn
 		if idx := strings.Index(dsn, "://"); idx >= 0 {
@@ -36,7 +40,7 @@ func detectStorageBackend(dsn string) (string, error) {
 		}
 
 		return "", fmt.Errorf(
-			"unsupported storage DSN scheme %q: use sqlite3:// or postgres://",
+			"unsupported storage DSN scheme %q: use sqlite3://, postgres://, or mysql://",
 			scheme,
 		)
 	}
@@ -52,6 +56,21 @@ func postgresDSNSSLMode(dsn string) string {
 	}
 
 	return u.Query().Get("sslmode")
+}
+
+// mysqlDSNTLSValue parses the MySQL DSN and returns the value of the tls
+// query parameter. Returns an empty string if the DSN cannot be parsed or if
+// tls is not present.
+func mysqlDSNTLSValue(dsn string) string {
+	// Replace scheme so url.Parse handles it as a URL.
+	raw := "https://" + strings.TrimPrefix(dsn, "mysql://")
+
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+
+	return u.Query().Get("tls")
 }
 
 func newShortURLServiceFromConfig(
@@ -104,6 +123,28 @@ func newShortURLServiceFromConfig(
 		}
 
 		svcStore, svcCounter, closer = pgStore, pgCounter, pgCloser
+	case backendMySQL:
+		if mysqlDSNTLSValue(cfg.StorageDSN) == "false" {
+			slog.Warn(
+				"MySQL DSN tls=false: " +
+					"TLS is disabled and connections are unencrypted. " +
+					"Use tls=true or tls=skip-verify in production.",
+			)
+		}
+
+		dbPool := store.DBPoolConfig{
+			MaxOpenConns:    cfg.DBMaxOpenConns,
+			MaxIdleConns:    cfg.DBMaxIdleConns,
+			ConnMaxLifetime: cfg.DBConnMaxLifetime,
+			ConnMaxIdleTime: cfg.DBConnMaxIdleTime,
+		}
+
+		mysqlStore, mysqlCounter, mysqlCloser, err := store.NewMySQLBackends(cfg.StorageDSN, dbPool)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open mysql backends: %w", err)
+		}
+
+		svcStore, svcCounter, closer = mysqlStore, mysqlCounter, mysqlCloser
 	default: // sqlite
 		sqliteStore, sqliteCounter, sqliteCloser, err := store.NewSQLiteBackends(cfg.StorageDSN)
 		if err != nil {

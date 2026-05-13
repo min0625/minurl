@@ -10,13 +10,13 @@ Core short URL API is implemented and running:
 - Runtime behavior:
 	- Runs HTTP API server by default on `:8888`
 	- Provides CLI subcommands: `openapi`, `version`, `healthcheck`
-- Storage backend: SQLite (`sqlite3://`) or PostgreSQL (`postgres://`), selected via `--storage-dsn`
+- Storage backend: SQLite (`sqlite3://`), PostgreSQL (`postgres://`), or MySQL (`mysql://`), selected via `--storage-dsn`
 - Both short URL records and `id counter` are persisted in the configured backend
 - Container build target binary: `minurl`
 
 ## Database migrations
 
-SQLite and PostgreSQL use embedded `golang-migrate` migrations. New databases are migrated automatically on startup.
+SQLite, PostgreSQL, and MySQL use embedded `golang-migrate` migrations. New databases are migrated automatically on startup.
 
 ## API Documentation
 

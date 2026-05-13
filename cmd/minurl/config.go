@@ -45,7 +45,7 @@ type appConfig struct {
 	OTELExporter    string
 	OTELEndpoint    string
 	OTELInsecure    bool
-	// DB pool settings. These apply to the PostgreSQL backend only.
+	// DB pool settings. These apply to the PostgreSQL and MySQL backends.
 	// SQLite always uses a single connection regardless of these settings.
 	DBMaxOpenConns    int
 	DBMaxIdleConns    int
