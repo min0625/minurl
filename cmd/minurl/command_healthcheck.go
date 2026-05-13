@@ -4,7 +4,7 @@ package main
 import (
 	"fmt"
 	"net/http"
-	"os"
+	"net/url"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -19,20 +19,22 @@ func newHealthCheckCommand() *cobra.Command {
 		Long: "Makes an HTTP GET request to /livez on the running server. " +
 			"Exits 0 if the server is healthy, 1 otherwise.",
 		RunE: func(_ *cobra.Command, _ []string) error {
-			client := &http.Client{Timeout: 5 * time.Second}
-			url := addr + "/livez"
-
-			resp, err := client.Get(url) //nolint:noctx // healthcheck is intentionally simple
+			targetURL, err := url.JoinPath(addr, "livez")
 			if err != nil {
-				fmt.Fprintf(os.Stderr, "healthcheck failed: %v\n", err)
-				os.Exit(1)
+				return fmt.Errorf("invalid addr: %w", err)
+			}
+
+			client := &http.Client{Timeout: 5 * time.Second}
+
+			resp, err := client.Get(targetURL) //nolint:noctx // healthcheck is intentionally simple
+			if err != nil {
+				return fmt.Errorf("healthcheck failed: %w", err)
 			}
 
 			defer func() { _ = resp.Body.Close() }()
 
 			if resp.StatusCode != http.StatusOK {
-				fmt.Fprintf(os.Stderr, "healthcheck failed: HTTP %d\n", resp.StatusCode)
-				os.Exit(1)
+				return fmt.Errorf("healthcheck failed: HTTP %d", resp.StatusCode)
 			}
 
 			return nil
