@@ -1,0 +1,125 @@
+# Kubernetes example for running minurl with SQLite
+#
+# USAGE:
+#   # Build and push the image first:
+#   docker build -t <your-registry>/minurl:latest ../../
+#   docker push <your-registry>/minurl:latest
+#
+#   # Copy this file and update the image field, then apply:
+#   cp minurl-sqlite.example.yaml minurl-sqlite.yaml
+#   # Edit minurl-sqlite.yaml: replace 'minurl:latest' with your registry image
+#   kubectl apply -f minurl-sqlite.yaml
+#
+# NOTE: SQLite requires a single replica (ReadWriteOnce PVC).
+#       For multi-replica deployments, use the PostgreSQL variant.
+
+---
+# PersistentVolumeClaim — stores the SQLite database file
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: minurl-data
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minurl
+  labels:
+    app: minurl
+spec:
+  # SQLite is single-writer; keep replicas at 1
+  replicas: 1
+  selector:
+    matchLabels:
+      app: minurl
+  template:
+    metadata:
+      labels:
+        app: minurl
+    spec:
+      containers:
+        - name: minurl
+          # Replace with your registry image, e.g. ghcr.io/your-org/minurl:latest
+          image: minurl:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8888
+              protocol: TCP
+          env:
+            - name: MINURL_STORAGE_DSN
+              value: "sqlite3:///data/minurl.sqlite3"
+            - name: MINURL_LOG_FORMAT
+              value: "json"
+          volumeMounts:
+            - name: data
+              mountPath: /data
+
+          # startupProbe — gates liveness/readiness until the app is ready.
+          # Allows up to 30 s (6 × 5 s) for initial startup.
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 6
+
+          # livenessProbe — restarts the container if it becomes unresponsive.
+          # Checks /livez (no DB required) to avoid cascading restarts on DB issues.
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # readinessProbe — removes the pod from Service endpoints when the DB
+          # is unreachable, preventing traffic to an unhealthy instance.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: minurl-data
+
+---
+# Service — exposes minurl within the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: minurl
+  labels:
+    app: minurl
+spec:
+  selector:
+    app: minurl
+  ports:
+    - name: http
+      port: 8888
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP
