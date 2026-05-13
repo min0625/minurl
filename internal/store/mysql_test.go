@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
 	"github.com/min0625/minurl/internal/service"
 )
 
@@ -82,9 +83,18 @@ func TestParseMySQLDSNEnforcesParseTime(t *testing.T) {
 		t.Fatalf("parseMySQLDSN() error = %v", err)
 	}
 
-	// The driver DSN must contain parseTime=true so time.Time values round-trip correctly.
-	if got == "" {
-		t.Fatalf("parseMySQLDSN() returned empty DSN")
+	// Parse the driver DSN to verify that parseTime=true and loc=UTC are enforced.
+	cfg, err := mysqldriver.ParseDSN(got)
+	if err != nil {
+		t.Fatalf("mysqldriver.ParseDSN(%q) error = %v", got, err)
+	}
+
+	if !cfg.ParseTime {
+		t.Fatalf("ParseTime = false, want true: time.Time values require parseTime=true")
+	}
+
+	if cfg.Loc == nil || cfg.Loc.String() != "UTC" {
+		t.Fatalf("Loc = %v, want UTC", cfg.Loc)
 	}
 }
 

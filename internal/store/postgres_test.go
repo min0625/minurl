@@ -119,7 +119,7 @@ func skipIfNoIntegration(t *testing.T) {
 	t.Helper()
 
 	if os.Getenv("INTEGRATION_TEST") != "1" {
-		t.Skip("set INTEGRATION_TEST=1 to run PostgreSQL integration tests (requires Docker)")
+		t.Skip("set INTEGRATION_TEST=1 to run DB integration tests (requires Docker)")
 	}
 }
 

@@ -124,11 +124,13 @@ func newShortURLServiceFromConfig(
 
 		svcStore, svcCounter, closer = pgStore, pgCounter, pgCloser
 	case backendMySQL:
-		if mysqlDSNTLSValue(cfg.StorageDSN) == "false" {
+		if tlsVal := mysqlDSNTLSValue(cfg.StorageDSN); tlsVal == "false" || tlsVal == "" {
 			slog.Warn(
-				"MySQL DSN tls=false: " +
-					"TLS is disabled and connections are unencrypted. " +
-					"Use tls=true or tls=skip-verify in production.",
+				"MySQL DSN: TLS is not enabled — connections are unencrypted. " +
+					"Set tls=true (or configure a named custom CA via RegisterTLSConfig) " +
+					"in production. " +
+					"tls=skip-verify encrypts traffic but does not verify the server " +
+					"certificate and should only be used as a last resort.",
 			)
 		}
 
