@@ -198,6 +198,104 @@ func TestSQLiteShortURLStorageExpireTimeRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSQLiteShortURLStorageCaseSensitiveIDs verifies that the SQLite storage
+// treats IDs as case-sensitive: "abcdef" and "ABCDEF" must be distinct rows.
+// SQLite TEXT columns use binary collation for equality comparisons by default.
+func TestSQLiteShortURLStorageCaseSensitiveIDs(t *testing.T) {
+	t.Parallel()
+
+	storage, _, closer, err := NewSQLiteBackends(
+		"sqlite3:///" + t.TempDir() + "/casesensitive.sqlite3",
+	)
+	if err != nil {
+		t.Fatalf("NewSQLiteBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close sqlite backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+	lower := "abc"
+	upper := "ABC"
+
+	lowerEntry := service.ShortURL{
+		ID:          lower,
+		OriginalURL: "https://example.com/lower",
+		CreateTime:  time.Now().UTC().Truncate(time.Second),
+	}
+	upperEntry := service.ShortURL{
+		ID:          upper,
+		OriginalURL: "https://example.com/upper",
+		CreateTime:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	// Both should be created — they are different IDs.
+	lowerCreated, err := storage.CreateIfAbsent(ctx, lowerEntry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent(lower) error = %v", err)
+	}
+
+	if !lowerCreated {
+		t.Fatalf("CreateIfAbsent(lower) = false, want true")
+	}
+
+	upperCreated, err := storage.CreateIfAbsent(ctx, upperEntry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent(upper) error = %v", err)
+	}
+
+	if !upperCreated {
+		t.Fatalf("CreateIfAbsent(upper) = false, want true: IDs must be case-sensitive")
+	}
+
+	// Inserting the same lower-case ID again must return created=false (conflict).
+	dupCreated, err := storage.CreateIfAbsent(ctx, lowerEntry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent(lower duplicate) error = %v", err)
+	}
+
+	if dupCreated {
+		t.Fatalf("CreateIfAbsent(lower duplicate) = true, want false")
+	}
+
+	// GetByID must return each entry independently.
+	gotLower, foundLower, err := storage.GetByID(ctx, lower)
+	if err != nil {
+		t.Fatalf("GetByID(lower) error = %v", err)
+	}
+
+	if !foundLower {
+		t.Fatalf("GetByID(lower) found = false, want true")
+	}
+
+	if gotLower.ID != lower {
+		t.Fatalf("GetByID(lower) ID = %q, want %q", gotLower.ID, lower)
+	}
+
+	gotUpper, foundUpper, err := storage.GetByID(ctx, upper)
+	if err != nil {
+		t.Fatalf("GetByID(upper) error = %v", err)
+	}
+
+	if !foundUpper {
+		t.Fatalf("GetByID(upper) found = false, want true")
+	}
+
+	if gotUpper.ID != upper {
+		t.Fatalf("GetByID(upper) ID = %q, want %q", gotUpper.ID, upper)
+	}
+
+	if gotLower.OriginalURL == gotUpper.OriginalURL {
+		t.Fatalf(
+			"lower and upper IDs resolved to same OriginalURL %q, want distinct rows",
+			gotLower.OriginalURL,
+		)
+	}
+}
+
 func TestSQLiteShortURLStorageNilExpireTimeRoundTrip(t *testing.T) {
 	t.Parallel()
 

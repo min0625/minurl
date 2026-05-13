@@ -324,7 +324,7 @@ func TestLoadAppConfigRejectsInvalidStorageBackend(t *testing.T) {
 	t.Parallel()
 
 	cmd := newRootCommand()
-	if err := cmd.PersistentFlags().Set("storage-dsn", "mysql://localhost/db"); err != nil {
+	if err := cmd.PersistentFlags().Set("storage-dsn", "mongodb://localhost/db"); err != nil {
 		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
@@ -366,6 +366,29 @@ func TestLoadAppConfigAcceptsPostgresWithDSN(t *testing.T) {
 			"StorageDSN = %q, want %q",
 			cfg.StorageDSN,
 			"postgres://localhost:5432/minurl?sslmode=disable",
+		)
+	}
+}
+
+func TestLoadAppConfigAcceptsMySQLWithDSN(t *testing.T) {
+	t.Parallel()
+
+	cmd := newRootCommand()
+	if err := cmd.PersistentFlags().
+		Set("storage-dsn", "mysql://user:pass@localhost:3306/minurl"); err != nil {
+		t.Fatalf("set storage-dsn flag: %v", err)
+	}
+
+	cfg, err := loadAppConfig(cmd, "")
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v, want nil", err)
+	}
+
+	if cfg.StorageDSN != "mysql://user:pass@localhost:3306/minurl" { //nolint:gosec // test credentials
+		t.Fatalf(
+			"StorageDSN = %q, want %q",
+			cfg.StorageDSN,
+			"mysql://user:pass@localhost:3306/minurl",
 		)
 	}
 }

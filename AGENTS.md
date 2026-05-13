@@ -24,7 +24,7 @@ This repository is a Go short URL service. The core API is fully implemented —
   - `deploy/docker-compose/` — Docker Compose examples (`.example.yml`; copy and customize before use)
   - `deploy/kubernetes/` — Kubernetes manifest examples (`.example.yaml`; copy and customize before use)
 - HTTP listen port: `:8888` (default)
-- Storage backends: SQLite (`sqlite3://`) and PostgreSQL (`postgres://`), auto-detected from DSN scheme
+- Storage backends: SQLite (`sqlite3://`), PostgreSQL (`postgres://`), and MySQL (`mysql://`), auto-detected from DSN scheme
 - Log format: `text` (default) or `json`, controlled via `--log-format` / `MINURL_LOG_FORMAT`
 - OpenTelemetry: opt-in tracing via `--otel-enabled`; supports `stdout` and `otlp` exporters
 - Configuration precedence: CLI flags > env vars > config file > defaults
@@ -112,16 +112,16 @@ This is guidance, not a strict requirement, and can be adjusted per task.
 
 ## Database Migration Strategy
 
-Both SQLite and PostgreSQL use [golang-migrate/migrate v4](https://github.com/golang-migrate/migrate) for versioned, in-process migrations:
+SQLite, PostgreSQL, and MySQL use [golang-migrate/migrate v4](https://github.com/golang-migrate/migrate) for versioned, in-process migrations:
 
-- **Migration files**: `internal/store/migrations/sqlite/` and `internal/store/migrations/postgres/`
+- **Migration files**: `internal/store/migrations/sqlite/`, `internal/store/migrations/postgres/`, and `internal/store/migrations/mysql/`
 - **Format**: `000001_<name>.up.sql` / `000001_<name>.down.sql`
-- **Embed**: `//go:embed` in `internal/store/migrations.go` — no external files needed at runtime
+- **Embed**: `//go:embed` in each store file — no external files needed at runtime
 - **Tracking**: golang-migrate creates a `schema_migrations` table in each database
-- **Drivers**: `github.com/golang-migrate/migrate/v4/database/sqlite` (modernc, no cgo) for SQLite; `github.com/golang-migrate/migrate/v4/database/postgres` for PostgreSQL
+- **Drivers**: `github.com/golang-migrate/migrate/v4/database/sqlite` (modernc, no cgo) for SQLite; `github.com/golang-migrate/migrate/v4/database/postgres` for PostgreSQL; `github.com/golang-migrate/migrate/v4/database/mysql` for MySQL
 - **`m.Close()` is NOT called** after `Up()` — the database drivers wrap a caller-owned `*sql.DB` and calling Close() would close the shared connection
 
 When adding new columns:
-1. Add a new `000002_<name>.up.sql` + `down.sql` pair under **both** `migrations/sqlite/` and `migrations/postgres/`
-2. Update `CreateIfAbsent()` and `GetByID()` in `internal/store/storage.go` (SQLite) and `internal/store/postgres.go`
+1. Add a new `000002_<name>.up.sql` + `down.sql` pair under **all three** `migrations/sqlite/`, `migrations/postgres/`, and `migrations/mysql/`
+2. Update `CreateIfAbsent()` and `GetByID()` in `internal/store/storage.go` (SQLite), `internal/store/postgres.go`, and `internal/store/mysql.go`
 3. Update `internal/testhelpers/storage.go` if the field needs special handling

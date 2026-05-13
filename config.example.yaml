@@ -29,6 +29,21 @@ http-addr: ":8888"
 #                 networks with a private CA.
 #   verify-full — SSL required, CA + hostname verified. Recommended for production.
 #
+# For MySQL: use a mysql:// DSN.
+#   DEVELOPMENT / local testing (no TLS, acceptable only on loopback):
+#     mysql://user:password@localhost:3306/minurl
+#   PRODUCTION — enable TLS:
+#     mysql://user:password@db.example.com:3306/minurl?tls=true
+#     mysql://user:password@db.example.com:3306/minurl?tls=skip-verify
+#
+# MySQL tls reference:
+#   (omitted)    — no TLS. Acceptable only on trusted loopback networks.
+#   false        — TLS disabled explicitly. NEVER use in production.
+#   skip-verify  — TLS enabled, server certificate NOT verified. Protects against
+#                  passive eavesdropping only; does not prevent MITM attacks.
+#   true         — TLS enabled, server certificate verified using system CA pool.
+#                  Recommended for production.
+#
 # The backend is auto-detected from the DSN scheme.
 # Default: "sqlite3://minurl.sqlite3"
 storage-dsn: "sqlite3://minurl.sqlite3"
@@ -56,7 +71,7 @@ otel-insecure: true
 id-seed: ""
 
 # Database connection pool settings.
-# These settings apply to the PostgreSQL backend only.
+# These settings apply to the PostgreSQL and MySQL backends.
 # SQLite always uses a single connection regardless of these settings.
 #
 # Recommended values for a typical production PostgreSQL deployment:

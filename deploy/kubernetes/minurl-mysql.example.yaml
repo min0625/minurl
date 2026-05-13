@@ -1,0 +1,129 @@
+# Kubernetes example for running minurl with MySQL
+#
+# USAGE:
+#   # Build and push the image first:
+#   docker build -t <your-registry>/minurl:latest ../../
+#   docker push <your-registry>/minurl:latest
+#
+#   # Copy this file, set your real DSN in stringData.dsn, then apply:
+#   cp minurl-mysql.example.yaml minurl-mysql.yaml
+#   # Edit minurl-mysql.yaml:
+#   #   - Replace 'minurl:latest' with your registry image
+#   #   - Set stringData.dsn to your real MySQL DSN
+#   kubectl apply -f minurl-mysql.yaml
+#
+# NOTE: This manifest does NOT include a MySQL deployment.
+#       Use a managed database service (e.g. Cloud SQL, RDS, PlanetScale)
+#       or a separate MySQL StatefulSet.
+
+---
+# Secret — holds the MySQL DSN.
+# Edit the dsn value in your copied file before applying.
+# Use plaintext in stringData; Kubernetes encodes it automatically.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: minurl-mysql
+type: Opaque
+stringData:
+  # For LOCAL DEV only (no TLS is acceptable locally):
+  #   mysql://minurl:password@mysql:3306/minurl
+  #
+  # For PRODUCTION (always use encrypted connections):
+  #   mysql://minurl:password@mysql:3306/minurl?tls=true
+  #   or with skip hostname verification:
+  #   mysql://minurl:password@mysql:3306/minurl?tls=skip-verify
+  dsn: "mysql://minurl:password@mysql:3306/minurl?tls=true"
+
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minurl
+  labels:
+    app: minurl
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: minurl
+  template:
+    metadata:
+      labels:
+        app: minurl
+    spec:
+      containers:
+        - name: minurl
+          # Replace with your registry image, e.g. ghcr.io/your-org/minurl:latest
+          image: minurl:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8888
+              protocol: TCP
+          env:
+            - name: MINURL_STORAGE_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: minurl-mysql
+                  key: dsn
+            - name: MINURL_LOG_FORMAT
+              value: "json"
+
+          # startupProbe — gates liveness/readiness until the app (and its DB
+          # connection) is ready. Allows up to 60 s (12 × 5 s) because MySQL
+          # connectivity may take longer than SQLite.
+          startupProbe:
+            httpGet:
+              path: /startupz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 12
+
+          # livenessProbe — restarts the container if it becomes unresponsive.
+          # Checks /livez (no DB required) to avoid cascading restarts on DB issues.
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # readinessProbe — removes the pod from Service endpoints when the DB
+          # is unreachable, preventing traffic to an unhealthy instance.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "64Mi"
+            limits:
+              cpu: "500m"
+              memory: "256Mi"
+
+---
+# Service — exposes minurl within the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: minurl
+  labels:
+    app: minurl
+spec:
+  selector:
+    app: minurl
+  ports:
+    - name: http
+      port: 8888
+      targetPort: http
+      protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,81 @@
+# Docker Compose example for running minurl with MySQL
+#
+# USAGE: Copy this file to docker-compose.mysql.yml and customize
+# the environment variables before running:
+#   cp docker-compose.mysql.example.yml docker-compose.mysql.yml
+#   # Edit docker-compose.mysql.yml with your credentials and settings
+#   docker-compose -f docker-compose.mysql.yml up
+
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.nginx
+    ports:
+      - "80:80"
+    depends_on:
+      minurl:
+        condition: service_healthy
+    restart: unless-stopped
+
+  minurl:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    image: minurl:latest
+    expose:
+      - "8888"
+    environment:
+      # Configure storage DSN.
+      #
+      # For LOCAL DEVELOPMENT (tls=false is acceptable locally):
+      #   MINURL_STORAGE_DSN: "mysql://minurl:password@mysql:3306/minurl"
+      #
+      # For PRODUCTION (always use encrypted connections):
+      #   MINURL_STORAGE_DSN: "mysql://minurl:password@mysql:3306/minurl?tls=true"
+      #   or with a custom CA:
+      #   MINURL_STORAGE_DSN: "mysql://minurl:password@mysql:3306/minurl?tls=custom"
+      #
+      # Consider using .env files or Docker secrets instead of hardcoding credentials.
+      MINURL_STORAGE_DSN: "${MINURL_STORAGE_DSN:-mysql://minurl:minurl@mysql:3306/minurl}"
+      MINURL_LOG_FORMAT: "json"
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/minurl", "healthcheck"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      # WARNING: Replace these with secure, randomly generated credentials.
+      # Consider using Docker secrets or a secrets management service in production.
+      MYSQL_USER: "${MYSQL_USER:-minurl}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:-minurl}"
+      MYSQL_DATABASE: "${MYSQL_DATABASE:-minurl}"
+      # MYSQL_ROOT_PASSWORD is required by MySQL even when using a non-root user.
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:-rootpassword}"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test:
+        - "CMD"
+        - "mysqladmin"
+        - "ping"
+        - "-h"
+        - "localhost"
+        - "-u"
+        - "${MYSQL_USER:-minurl}"
+        - "--password=${MYSQL_PASSWORD:-minurl}"
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  mysql_data:
