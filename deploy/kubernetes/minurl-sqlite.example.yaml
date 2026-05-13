@@ -49,7 +49,7 @@ spec:
         - name: minurl
           # Replace with your registry image, e.g. ghcr.io/your-org/minurl:latest
           image: minurl:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8888

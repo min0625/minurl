@@ -5,13 +5,11 @@
 #   docker build -t <your-registry>/minurl:latest ../../
 #   docker push <your-registry>/minurl:latest
 #
-#   # Create the Secret with your real credentials (do NOT commit plaintext secrets):
-#   kubectl create secret generic minurl-postgres \
-#     --from-literal=dsn='postgres://minurl:password@postgres:5432/minurl?sslmode=require'
-#
-#   # Copy this file and update the image field, then apply:
+#   # Copy this file, set your real DSN in stringData.dsn, then apply:
 #   cp minurl-postgres.example.yaml minurl-postgres.yaml
-#   # Edit minurl-postgres.yaml: replace 'minurl:latest' with your registry image
+#   # Edit minurl-postgres.yaml:
+#   #   - Replace 'minurl:latest' with your registry image
+#   #   - Set stringData.dsn to your real PostgreSQL DSN
 #   kubectl apply -f minurl-postgres.yaml
 #
 # NOTE: This manifest does NOT include a PostgreSQL deployment.
@@ -19,8 +17,8 @@
 
 ---
 # Secret — holds the PostgreSQL DSN.
-# Replace the placeholder value with your Base64-encoded DSN, or use
-# `kubectl create secret` as shown in USAGE above.
+# Edit the dsn value in your copied file before applying.
+# Use plaintext in stringData; Kubernetes encodes it automatically.
 apiVersion: v1
 kind: Secret
 metadata:
@@ -58,7 +56,7 @@ spec:
         - name: minurl
           # Replace with your registry image, e.g. ghcr.io/your-org/minurl:latest
           image: minurl:latest
-          imagePullPolicy: IfNotPresent
+          imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8888
