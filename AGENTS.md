@@ -1,10 +1,13 @@
 # AGENTS
 
-Guidance for coding agents working in this repository.
+Guidance for AI coding agents working in this repository.
+
+> For development workflow, coding conventions, testing requirements, and PR process,
+> see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Purpose
 
-This repository is a Go short URL service. The core API is fully implemented — it supports creating, fetching, and redirecting short URLs backed by SQLite or PostgreSQL. The runtime provides a Cobra-based CLI entrypoint and HTTP server startup via `cmd/minurl/main.go`.
+MinURL is a Go short URL service. The core API is fully implemented — it supports creating, fetching, and redirecting short URLs backed by SQLite, PostgreSQL, or MySQL. The runtime provides a Cobra-based CLI entrypoint and HTTP server startup via `cmd/minurl/main.go`.
 
 ## Core Rules
 
@@ -12,7 +15,7 @@ This repository is a Go short URL service. The core API is fully implemented —
 - Preserve existing behavior unless a task explicitly requires behavior changes.
 - Do not introduce unrelated refactors.
 - Add tests when changing logic.
-- Keep code and docs consistent.
+- Keep code and docs consistent with [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Project Facts
 
@@ -31,16 +34,29 @@ This repository is a Go short URL service. The core API is fully implemented —
 
 ## Domain Model: ShortURL
 
-The `ShortURL` struct (defined in `internal/service/model.go`) has these fields:
+Defined in `internal/service/model.go`:
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `id` | string | No | Short URL identifier (Base58, ≤12 chars). Auto-generated if omitted. |
-| `original_url` | string | **Yes** | The destination URL. |
-| `expire_time` | *time.Time | No | Expiry in RFC 3339 UTC. Omit or null = permanent. |
-| `create_time` | time.Time | No (readOnly) | Set by server on creation. |
+| Field | Type | JSON key | Required | Notes |
+|-------|------|----------|----------|-------|
+| `ID` | `string` | `id` | No | Base58 ≤12 chars; auto-generated if omitted |
+| `OriginalURL` | `string` | `original_url` | **Yes** | Must be a valid URL |
+| `ExpireTime` | `*time.Time` | `expire_time` | No | RFC 3339 UTC; omit/null = permanent |
+| `CreateTime` | `time.Time` | `create_time` | No | readOnly — set by server |
 
-**Expiry behavior**: `Get()` and `:redirect` return `not found` (false) for expired URLs. The store layer always returns the raw row; expiry is enforced in `internal/service/short_url.go`.
+**Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
+
+## Layer Responsibilities
+
+| Layer | Package | Key files |
+|-------|---------|-----------|
+| Entry | `cmd/minurl` | `main.go`, `server.go`, `service_factory.go`, `config.go` |
+| Handler | `internal/handler` | `short_url.go`, `health.go` |
+| Service | `internal/service` | `short_url.go`, `model.go`, `validation.go`, `id_generator.go` |
+| Store | `internal/store` | `storage.go` (SQLite), `postgres.go`, `mysql.go` |
+| Test helpers | `internal/testhelpers` | In-memory fakes for unit tests |
+| HTTP server | `internal/httpserver` | HTTP server lifecycle |
+| Middleware | `internal/middleware` | Logging, recovery, decompression |
+| Telemetry | `internal/telemetry` | OpenTelemetry initialization |
 
 ## Health Check Endpoints
 
@@ -53,75 +69,64 @@ Health endpoints are mounted directly on the chi router (not via Huma) and do **
 | `GET /startupz` | Startup | Same as `/readyz` |
 
 - Implemented via `github.com/alexliesenfeld/health` in `internal/handler/health.go`.
-- `store.CloserPinger` interface (`internal/store/pinger.go`) is implemented by both SQLite and Postgres backends and passed through `service_factory → server → RegisterHealthHandlers`.
+- `store.CloserPinger` interface (`internal/store/pinger.go`) is implemented by all three storage backends and passed through `service_factory → server → RegisterHealthHandlers`.
 - The `minurl healthcheck` CLI subcommand (`cmd/minurl/command_healthcheck.go`) GETs `/livez` and exits 0/1 — used as Docker `HEALTHCHECK CMD` in the distroless container.
 
 ## Useful Commands
 
-Use Make targets when possible:
+See [CONTRIBUTING.md — Make Targets Reference](CONTRIBUTING.md#make-targets-reference) for the full list.
 
-- `make fix`
-- `make lint`
-- `make test`
-- `make check`
-- `make gen` — regenerate OpenAPI docs (`docs/openapi/`) **and** Kiota Go client (`pkg/kiota/go/gen/client/`) from the live server contract
-- `make docker-build`
-- `make docker-run`
+Quick reference:
+
+| Target | What it does |
+|--------|-------------|
+| `make check` | tidy diff + lint + test |
+| `make gen` | regenerate OpenAPI docs and Kiota client |
+| `make ci` | check + gen + `git diff --exit-code` |
+| `make test` | race-enabled `go test ./...` |
 
 Direct run:
 
-- `go run ./cmd/minurl`
+```bash
+go run ./cmd/minurl
+```
 
-**IMPORTANT**: After any change to `internal/service/model.go`, HTTP handlers, or API routes, you MUST run `make gen` to keep `docs/openapi/` and `pkg/kiota/go/gen/` in sync. The CI `make ci` target enforces this with `git diff --exit-code`.
+## MANDATORY: After Any API or Model Change
 
-## Coding Conventions
+See [CONTRIBUTING.md — Mandatory: After Any API or Model Change](CONTRIBUTING.md#mandatory-after-any-api-or-model-change).
 
-- Follow idiomatic Go style and keep functions small.
-- Prefer explicit, readable names over abbreviations.
-- Return actionable errors with context.
-- Keep public APIs minimal until requirements are clear.
+## Documentation Checklist
 
-## Testing Expectations
+See [CONTRIBUTING.md — Documentation Checklist](CONTRIBUTING.md#documentation-checklist).
 
-- Add or update tests for behavior changes.
-- Prefer table-driven tests for handler and validation logic.
-- Run `make test` and `make lint` before finalizing.
+## Architecture Direction
 
-## Documentation Expectations
+Prefer this layering when adding new functionality:
 
-When changing functionality, update **all** of the following that apply:
+1. `cmd` — startup and wiring only
+2. `internal/handler` — HTTP route registration, request/response parsing
+3. `internal/service` — business logic, validation, expiry
+4. `internal/store` — persistence (SQLite / PostgreSQL / MySQL)
 
-- `README.md` — user-facing behavior and API examples
-- `docs/http/minurl.http` — REST Client debug examples (add new field/scenario manually)
-- `docs/openapi/openapi.yaml` and `docs/openapi/openapi.json` — run `make openapi` or `make gen`
-- `pkg/kiota/go/gen/` — run `make kiota` or `make gen`
-- `AGENTS.md` — update Domain Model table and any changed behaviors
-- Architecture notes (when new major components are introduced)
-
-## Suggested Architecture Direction
-
-As the short URL service is implemented, prefer this layering:
-
-1. `cmd` or entry layer (startup and wiring)
-2. `internal/handler` (HTTP handlers)
-3. `internal/service` (business logic)
-4. `internal/store` (persistence)
-5. `internal/model` (domain types)
-
-This is guidance, not a strict requirement, and can be adjusted per task.
+This is guidance, not a strict requirement.
 
 ## Database Migration Strategy
 
 SQLite, PostgreSQL, and MySQL use [golang-migrate/migrate v4](https://github.com/golang-migrate/migrate) for versioned, in-process migrations:
 
 - **Migration files**: `internal/store/migrations/sqlite/`, `internal/store/migrations/postgres/`, and `internal/store/migrations/mysql/`
-- **Format**: `000001_<name>.up.sql` / `000001_<name>.down.sql`
+- **Naming**: `000001_<name>.up.sql` / `000001_<name>.down.sql`
 - **Embed**: `//go:embed` in each store file — no external files needed at runtime
 - **Tracking**: golang-migrate creates a `schema_migrations` table in each database
 - **Drivers**: `github.com/golang-migrate/migrate/v4/database/sqlite` (modernc, no cgo) for SQLite; `github.com/golang-migrate/migrate/v4/database/postgres` for PostgreSQL; `github.com/golang-migrate/migrate/v4/database/mysql` for MySQL
-- **`m.Close()` is NOT called** after `Up()` — the database drivers wrap a caller-owned `*sql.DB` and calling Close() would close the shared connection
+- **`m.Close()` is NOT called** after `Up()` — the database drivers wrap a caller-owned `*sql.DB`; calling Close() would close the shared connection
 
-When adding new columns:
-1. Add a new `000002_<name>.up.sql` + `down.sql` pair under **all three** `migrations/sqlite/`, `migrations/postgres/`, and `migrations/mysql/`
-2. Update `CreateIfAbsent()` and `GetByID()` in `internal/store/storage.go` (SQLite), `internal/store/postgres.go`, and `internal/store/mysql.go`
-3. Update `internal/testhelpers/storage.go` if the field needs special handling
+### Adding New Columns
+
+See the full procedure in [CONTRIBUTING.md → Adding a New Storage Column](CONTRIBUTING.md#adding-a-new-storage-column).
+
+Summary:
+1. Add `000002_<name>.up.sql` + `down.sql` to **all three** migration directories.
+2. Update `CreateIfAbsent()` and `GetByID()` in `storage.go`, `postgres.go`, and `mysql.go`.
+3. Update `internal/testhelpers/storage.go` if needed.
+4. Run `make gen`.
