@@ -271,7 +271,7 @@ MINURL_STORAGE_DSN="mysql://user:password@localhost:3306/minurl"
 
 ### DB connection pool configuration
 
-Connection pool settings apply to the **PostgreSQL backend only**. SQLite always uses a single connection.
+Connection pool settings apply to the **PostgreSQL and MySQL backends**. SQLite always uses a single connection.
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
