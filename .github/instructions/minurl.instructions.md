@@ -5,9 +5,12 @@ applyTo: "**"
 
 Repository-specific rules and workflow guidance for AI agents working in this codebase.
 
+> For development workflow, coding conventions, testing requirements, and PR process,
+> see [CONTRIBUTING.md](../../CONTRIBUTING.md).
+
 ## Project Overview
 
-MinURL is a Go short URL service. The core API supports creating, fetching, and redirecting short URLs backed by SQLite or PostgreSQL.
+MinURL is a Go short URL service. The core API supports creating, fetching, and redirecting short URLs backed by SQLite, PostgreSQL, or MySQL.
 
 ## MANDATORY: After Any API or Model Change
 
@@ -34,6 +37,7 @@ After any functional change, update **all** of the following that apply:
 | `docs/openapi/` | Run `make gen` (auto) |
 | `pkg/kiota/go/gen/` | Run `make gen` (auto) |
 | `AGENTS.md` | Domain Model table, migration strategy, new behaviors |
+| `CONTRIBUTING.md` | New mandatory workflows or conventions |
 | `.github/instructions/minurl.instructions.md` | New mandatory workflows or conventions |
 
 ## Domain Model: ShortURL
@@ -53,24 +57,27 @@ Defined in `internal/service/model.go`:
 
 - SQLite storage: `internal/store/storage.go` + `internal/store/sqlite.go`
 - PostgreSQL storage: `internal/store/postgres.go`
+- MySQL storage: `internal/store/mysql.go`
 - Test storage (in-memory): `internal/testhelpers/storage.go`
 
 ### Migration System
 
 Migrations are managed by **[golang-migrate/migrate v4](https://github.com/golang-migrate/migrate)** with SQL files embedded in the binary via `//go:embed`.
 
-- Migration files: `internal/store/migrations/sqlite/` and `internal/store/migrations/postgres/`
+- Migration files: `internal/store/migrations/sqlite/`, `internal/store/migrations/postgres/`, and `internal/store/migrations/mysql/`
 - Naming: `000001_<name>.up.sql` / `000001_<name>.down.sql`
 - Shared helper: `runMigrations()` in `internal/store/migrations.go`
 - `m.Close()` is **not** called — the DB drivers wrap a caller-owned `*sql.DB`; calling Close() would close the shared connection
 
 ### Adding New Columns
 
-When adding a new column to `short_urls`:
-1. Add `000002_<name>.up.sql` + `down.sql` to **both** `internal/store/migrations/sqlite/` and `internal/store/migrations/postgres/`
-2. Update `CreateIfAbsent()` in both `internal/store/storage.go` and `internal/store/postgres.go`.
-3. Update `GetByID()` in both files.
-4. Update `internal/testhelpers/storage.go` if the field needs special handling.
+See the full procedure in [CONTRIBUTING.md → Adding a New Storage Column](../../CONTRIBUTING.md#adding-a-new-storage-column).
+
+Summary:
+1. Add `000002_<name>.up.sql` + `down.sql` to **all three** migration directories.
+2. Update `CreateIfAbsent()` and `GetByID()` in `storage.go`, `postgres.go`, and `mysql.go`.
+3. Update `internal/testhelpers/storage.go` if the field needs special handling.
+4. Run `make gen`.
 
 ## Make Targets Reference
 
@@ -95,13 +102,13 @@ When adding a new column to `short_urls`:
 | Entry | `cmd/minurl` | startup, wiring, CLI flags |
 | Handler | `internal/handler` | HTTP route registration, request/response |
 | Service | `internal/service` | business logic, validation, expiry |
-| Store | `internal/store` | persistence (SQLite / PostgreSQL) |
+| Store | `internal/store` | persistence (SQLite / PostgreSQL / MySQL) |
 | Test helpers | `internal/testhelpers` | in-memory fakes for unit tests |
 
 ## Testing Conventions
 
 - Unit tests use in-memory fakes from `internal/testhelpers`.
-- PostgreSQL integration tests require `INTEGRATION_TEST=1` and Docker.
+- PostgreSQL and MySQL integration tests require `INTEGRATION_TEST=1` and Docker.
 - Always add tests when changing business logic.
 - Prefer table-driven tests for validation and handler logic.
 - Run `make test && make lint` before finalizing any change.

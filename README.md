@@ -253,9 +253,25 @@ MINURL_STORAGE_DSN="postgres://user:password@db.example.com:5432/minurl?sslmode=
 MINURL_STORAGE_DSN="postgres://user:password@localhost:5432/minurl?sslmode=disable"
 ```
 
+**MySQL** — use the `tls` query parameter to control encryption:
+
+| tls | When to use |
+|-----|-------------|
+| omitted / `false` | Local development / loopback only. **Never use in production.** |
+| `skip-verify` | TLS required, server certificate **not** verified. |
+| `true` | TLS required with system CA verification. **Recommended for production.** |
+
+```bash
+# Production
+MINURL_STORAGE_DSN="mysql://user:password@db.example.com:3306/minurl?tls=true"
+
+# Local development only
+MINURL_STORAGE_DSN="mysql://user:password@localhost:3306/minurl"
+```
+
 ### DB connection pool configuration
 
-Connection pool settings apply to the **PostgreSQL backend only**. SQLite always uses a single connection.
+Connection pool settings apply to the **PostgreSQL and MySQL backends**. SQLite always uses a single connection.
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
@@ -497,101 +513,61 @@ By default:
 - Tag: current git tag (if exact tag exists) or short commit SHA
 - Docker build injects metadata into binary with `LDFLAGS` in `Makefile`
 
-## Quality and Checks
+## Contributing
 
-Run these commands during development:
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, make targets, coding conventions, testing, and PR process.
 
-```bash
-make fix
-make lint
-make test
-make check
-```
-
-What they do:
-
-- `fix`: tidy modules and apply linter auto-fixes
-- `lint`: run `golangci-lint`
-- `test`: run race-enabled Go tests
-- `check`: run tidy diff, lint, tests, and OpenAPI source consistency check
-
-If `check` reports OpenAPI docs are out of date, run:
+Quick reference:
 
 ```bash
-make openapi
+make fix      # tidy + lint auto-fix
+make check    # tidy diff + lint + test
+make gen      # regenerate OpenAPI docs and Kiota Go client
+make ci       # full CI check (same as CI pipeline)
 ```
-
-then commit updates under `docs/openapi/`.
 
 ## Repository Structure
 
 ```text
 .
-|-- cmd/
-|   |-- example-minurl-client/  # Example Kiota-generated Go client usage
-|   |   `-- main.go
-|   `-- minurl/                 # Main entry point and wiring
-|       |-- main.go
-|       |-- config.go           # Configuration loading (Viper)
-|       |-- config_bind.go      # Flag/env binding helpers
-|       |-- middleware.go       # HTTP middleware (logging, recovery, decompression)
-|       |-- server.go           # HTTP server startup and routing
-|       |-- service_factory.go  # Storage backend detection and service wiring
-|       |-- telemetry.go        # OpenTelemetry initialization
-|       |-- command_openapi.go  # `openapi` subcommand
-|       `-- command_version.go  # `version` subcommand
-|-- docs/
-|   |-- http/
-|   |   `-- minurl.http         # REST Client debug request examples
-|   `-- openapi/
-|       |-- openapi.json
-|       `-- openapi.yaml
-|-- internal/
-|   |-- handler/                # HTTP route handlers
-|   |   |-- short_url.go
-|   |   `-- short_url_test.go
-|   |-- service/                # Business logic
-|   |   |-- short_url.go
-|   |   |-- short_url_test.go
-|   |   |-- id_generator.go
-|   |   |-- id_generator_test.go
-|   |   `-- id_counter.go
-|   |-- store/                  # Persistence (SQLite and PostgreSQL)
-|   |   |-- sqlite.go
-|   |   |-- sqlite_test.go
-|   |   |-- postgres.go
-|   |   |-- postgres_test.go
-|   |   |-- storage.go
-|   |   `-- counter.go
-|   |-- model/                  # Domain types
-|   |   `-- short_url.go
-|   `-- testhelpers/            # Shared test utilities
-|       |-- helpers.go
-|       |-- counter.go
-|       |-- id_generator.go
-|       `-- storage.go
-|-- pkg/
-|   `-- kiota/go/gen/           # Kiota-generated API client
-|-- deploy/
-|   |-- docker-compose/         # Docker Compose examples (PostgreSQL and SQLite)
-|   `-- kubernetes/             # Kubernetes manifest examples (PostgreSQL and SQLite)
-|-- go.mod
-|-- Dockerfile
-|-- Makefile
-|-- config.example.yaml
-`-- LICENSE
+├── cmd/
+│   ├── minurl/                    # Main entry point and wiring
+│   │   ├── main.go
+│   │   ├── config.go              # Configuration loading (Viper)
+│   │   ├── config_bind.go         # Flag/env binding helpers
+│   │   ├── server.go              # HTTP server startup and routing
+│   │   ├── service_factory.go     # Storage backend detection and service wiring
+│   │   ├── command_healthcheck.go
+│   │   ├── command_openapi.go
+│   │   └── command_version.go
+│   └── minurl-client-example/     # Example Kiota-generated Go client usage
+│       └── main.go
+├── docs/
+│   ├── http/
+│   │   └── minurl.http            # REST Client debug request examples
+│   └── openapi/
+│       ├── openapi.json
+│       └── openapi.yaml
+├── internal/
+│   ├── handler/                   # HTTP route handlers
+│   ├── httpserver/                # HTTP server lifecycle
+│   ├── middleware/                # HTTP middleware (logging, recovery, decompression)
+│   ├── service/                   # Business logic
+│   ├── store/                     # Persistence (SQLite, PostgreSQL, MySQL)
+│   │   └── migrations/            # Embedded SQL migration files
+│   ├── telemetry/                 # OpenTelemetry initialization
+│   └── testhelpers/               # Shared test utilities
+├── pkg/
+│   └── kiota/go/gen/              # Kiota-generated API client
+├── deploy/
+│   ├── docker-compose/            # Docker Compose examples (SQLite, PostgreSQL, MySQL)
+│   └── kubernetes/                # Kubernetes manifests (SQLite, PostgreSQL, MySQL)
+├── go.mod
+├── Dockerfile
+├── Makefile
+├── config.example.yaml
+└── LICENSE
 ```
-
-## Next Suggested Milestones
-
-1. ✅ Define URL entity and storage interface.
-2. ✅ Add HTTP server and routing.
-3. ✅ Implement create and get short URL endpoints.
-4. ✅ Add tests and error handling.
-5. ✅ Add redirect endpoint (`GET /api/v1/urls/{id}:redirect` → `302` to original URL).
-6. ✅ Add custom alias support (optional `id` field on create).
-7. ✅ Add pluggable database backends (SQLite and PostgreSQL).
-8. ✅ Add OpenTelemetry tracing (stdout and OTLP exporters).
 
 ## License
 
