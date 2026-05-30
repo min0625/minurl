@@ -20,7 +20,7 @@ func newOpenAPICommand() *cobra.Command {
 	var outDir string
 
 	cmd := &cobra.Command{
-		Use:   "openapi",
+		Use:   cmdOpenAPI,
 		Short: "Generate OpenAPI specification files",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			msg, err := runOpenAPICommand(outDir)
@@ -59,7 +59,7 @@ func runOpenAPICommand(outDir string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("OpenAPI files generated in %s", outDir), nil
+	return "OpenAPI files generated in " + outDir, nil
 }
 
 func writeOpenAPIJSON(spec *huma.OpenAPI, path string) error {

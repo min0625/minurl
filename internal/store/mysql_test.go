@@ -10,6 +10,11 @@ import (
 	"github.com/min0625/minurl/internal/service"
 )
 
+const (
+	mysqlLowerURL = "https://example.com/lower"
+	mysqlUpperURL = "https://example.com/upper"
+)
+
 func TestParseMySQLDSN(t *testing.T) {
 	t.Parallel()
 
@@ -377,12 +382,12 @@ func TestMySQLShortURLStorageCaseSensitiveIDs(t *testing.T) {
 
 	lowerEntry := service.ShortURL{
 		ID:          lower,
-		OriginalURL: "https://example.com/lower",
+		OriginalURL: mysqlLowerURL,
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
 	}
 	upperEntry := service.ShortURL{
 		ID:          upper,
-		OriginalURL: "https://example.com/upper",
+		OriginalURL: mysqlUpperURL,
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
 	}
 

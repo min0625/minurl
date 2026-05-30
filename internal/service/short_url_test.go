@@ -13,6 +13,8 @@ import (
 	"github.com/min0625/minurl/internal/testhelpers"
 )
 
+const customShortURLID = "custom123"
+
 func TestShortURLServiceCreateAndGet(t *testing.T) {
 	t.Parallel()
 
@@ -70,14 +72,14 @@ func TestShortURLServiceCreateWithCustomID(t *testing.T) {
 
 	entry, err := svc.Create(
 		context.Background(),
-		service.ShortURL{ID: "custom123", OriginalURL: "https://example.org/custom"},
+		service.ShortURL{ID: customShortURLID, OriginalURL: "https://example.org/custom"},
 	)
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	if entry.ID != "custom123" {
-		t.Fatalf("Create() id = %q, want %q", entry.ID, "custom123")
+	if entry.ID != customShortURLID {
+		t.Fatalf("Create() id = %q, want %q", entry.ID, customShortURLID)
 	}
 
 	if entry.OriginalURL != "https://example.org/custom" {
@@ -90,7 +92,7 @@ func TestShortURLServiceCreateWithCustomID(t *testing.T) {
 
 	if _, err := svc.Create(
 		context.Background(),
-		service.ShortURL{ID: "custom123", OriginalURL: "https://example.org/duplicate"},
+		service.ShortURL{ID: customShortURLID, OriginalURL: "https://example.org/duplicate"},
 	); err == nil {
 		t.Fatal("Create() error = nil, want ErrShortURLIDConflict")
 	} else if !errors.Is(err, service.ErrShortURLIDConflict) {
@@ -146,7 +148,7 @@ func TestShortURLServiceCreateGeneratesUniqueBase58IDs(t *testing.T) {
 	svc := newTestShortURLService(t)
 	seen := make(map[string]struct{}, 2000)
 
-	for i := 0; i < 2000; i++ {
+	for i := range 2000 {
 		entry, err := svc.Create(
 			context.Background(),
 			service.ShortURL{OriginalURL: "https://example.org/batch"},

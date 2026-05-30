@@ -8,6 +8,8 @@ import (
 	"testing"
 )
 
+const configFlag = "--config"
+
 func TestRunOpenAPICommandAllFormats(t *testing.T) {
 	t.Parallel()
 
@@ -40,7 +42,7 @@ func TestExecuteOpenAPICommand(t *testing.T) {
 	var out bytes.Buffer
 
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"openapi", "--out", outDir})
+	cmd.SetArgs([]string{cmdOpenAPI, "--out", outDir})
 
 	err := cmd.Execute()
 	if err != nil {
@@ -68,7 +70,7 @@ func TestExecuteVersionCommand(t *testing.T) {
 	var out bytes.Buffer
 
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"version"})
+	cmd.SetArgs([]string{cmdVersion})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("version command returned error: %v", err)
@@ -83,7 +85,7 @@ func TestExecuteVersionCommand(t *testing.T) {
 func TestExecuteWithConfigDirectoryReturnsFriendlyError(t *testing.T) {
 	t.Parallel()
 
-	err := execute([]string{"--config", t.TempDir()})
+	err := execute([]string{configFlag, t.TempDir()})
 	if err == nil {
 		t.Fatal("expected error for directory config path")
 	}
@@ -101,7 +103,7 @@ func TestExecuteVersionCommandSkipsConfigLoading(t *testing.T) {
 	var out bytes.Buffer
 
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--config", t.TempDir(), "version"})
+	cmd.SetArgs([]string{configFlag, t.TempDir(), cmdVersion})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("version command should skip config loading: %v", err)
@@ -118,7 +120,7 @@ func TestExecuteOpenAPICommandSkipsConfigLoading(t *testing.T) {
 	outDir := t.TempDir()
 	cmd := newRootCommand()
 
-	cmd.SetArgs([]string{"--config", t.TempDir(), "openapi", "--out", outDir})
+	cmd.SetArgs([]string{configFlag, t.TempDir(), cmdOpenAPI, "--out", outDir})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("openapi command should skip config loading: %v", err)

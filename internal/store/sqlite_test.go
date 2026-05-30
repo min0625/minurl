@@ -8,6 +8,11 @@ import (
 	"github.com/min0625/minurl/internal/service"
 )
 
+const (
+	sqliteLowerURL = "https://example.com/lower"
+	sqliteUpperURL = "https://example.com/upper"
+)
+
 func TestParseSQLiteDSN(t *testing.T) {
 	t.Parallel()
 
@@ -223,12 +228,12 @@ func TestSQLiteShortURLStorageCaseSensitiveIDs(t *testing.T) {
 
 	lowerEntry := service.ShortURL{
 		ID:          lower,
-		OriginalURL: "https://example.com/lower",
+		OriginalURL: sqliteLowerURL,
 		CreateTime:  time.Now().UTC().Truncate(time.Second),
 	}
 	upperEntry := service.ShortURL{
 		ID:          upper,
-		OriginalURL: "https://example.com/upper",
+		OriginalURL: sqliteUpperURL,
 		CreateTime:  time.Now().UTC().Truncate(time.Second),
 	}
 

@@ -9,6 +9,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const (
+	cmdOpenAPI = "openapi"
+	cmdVersion = "version"
+)
+
 type rootOptions struct {
 	configPath string
 	appConfig  appConfig
@@ -36,7 +41,7 @@ func newRootCommand() *cobra.Command {
 	opts := &rootOptions{}
 
 	cmd := &cobra.Command{
-		Use:           "minurl",
+		Use:           appName,
 		Short:         "MinURL service",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -81,7 +86,7 @@ func newRootCommand() *cobra.Command {
 	)
 	cmd.PersistentFlags().String("log-format", "text", "log output format: text or json")
 	cmd.PersistentFlags().Bool("otel-enabled", false, "enable OpenTelemetry tracing")
-	cmd.PersistentFlags().String("otel-service-name", "minurl", "OpenTelemetry service name")
+	cmd.PersistentFlags().String("otel-service-name", appName, "OpenTelemetry service name")
 	cmd.PersistentFlags().
 		String("otel-exporter", "stdout", "OpenTelemetry exporter: stdout or otlp")
 	cmd.PersistentFlags().String("otel-endpoint", "", "OTLP collector endpoint")
@@ -120,7 +125,7 @@ func requiresRuntimeConfig(cmd *cobra.Command) bool {
 
 	name := cmd.Name()
 
-	return name != "openapi" && name != "version" && name != "healthcheck"
+	return name != cmdOpenAPI && name != cmdVersion && name != "healthcheck"
 }
 
 func validateConfigPath(path string) error {

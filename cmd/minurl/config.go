@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -14,8 +15,10 @@ import (
 )
 
 const (
-	logFormatText = "text"
-	logFormatJSON = "json"
+	appName          = "minurl"
+	defaultSQLiteDSN = "sqlite3://minurl.sqlite3"
+	logFormatText    = "text"
+	logFormatJSON    = "json"
 )
 
 // configKeys lists all configuration keys that should be bound from flags and environment variables.
@@ -56,10 +59,10 @@ type appConfig struct {
 func defaultAppConfig() appConfig {
 	return appConfig{
 		HTTPAddr:        ":8888",
-		StorageDSN:      "sqlite3://minurl.sqlite3",
+		StorageDSN:      defaultSQLiteDSN,
 		LogFormat:       logFormatText,
 		OTELEnabled:     false,
-		OTELServiceName: "minurl",
+		OTELServiceName: appName,
 		OTELExporter:    telemetry.ExporterStdout,
 		OTELEndpoint:    "",
 		OTELInsecure:    true,
@@ -140,7 +143,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	cfg.DBConnMaxIdleTime = dbConnMaxIdleTime
 
 	if cfg.HTTPAddr == "" {
-		return appConfig{}, fmt.Errorf("http-addr must not be empty")
+		return appConfig{}, errors.New("http-addr must not be empty")
 	}
 
 	if cfg.IDSeed != "" {
@@ -150,7 +153,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	}
 
 	if cfg.StorageDSN == "" {
-		return appConfig{}, fmt.Errorf("storage-dsn must not be empty")
+		return appConfig{}, errors.New("storage-dsn must not be empty")
 	}
 
 	if _, err := detectStorageBackend(cfg.StorageDSN); err != nil {
@@ -183,7 +186,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 		switch cfg.OTELExporter {
 		case telemetry.ExporterStdout, telemetry.ExporterOTLP:
 			if cfg.OTELExporter == telemetry.ExporterOTLP && cfg.OTELEndpoint == "" {
-				return appConfig{}, fmt.Errorf("otel.endpoint must be set when otel.exporter=otlp")
+				return appConfig{}, errors.New("otel.endpoint must be set when otel.exporter=otlp")
 			}
 		default:
 			return appConfig{}, fmt.Errorf(
@@ -204,7 +207,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 
 func parseUint32(raw string) (uint32, error) {
 	if raw == "" {
-		return 0, fmt.Errorf("empty value")
+		return 0, errors.New("empty value")
 	}
 
 	v, err := strconv.ParseUint(raw, 0, 32)

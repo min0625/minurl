@@ -302,7 +302,7 @@ func (c *SQLiteShortURLCounter) nextInTx(
 	}
 
 	if current == math.MaxUint64 {
-		return 0, false, fmt.Errorf("short id sequence exhausted")
+		return 0, false, errors.New("short id sequence exhausted")
 	}
 
 	next := current + 1

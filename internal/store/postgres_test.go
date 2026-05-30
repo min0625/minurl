@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -11,6 +12,11 @@ import (
 	"github.com/min0625/minurl/internal/service"
 	"github.com/testcontainers/testcontainers-go/modules/mysql"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
+)
+
+const (
+	postgresLowerURL = "https://example.com/lower"
+	postgresUpperURL = "https://example.com/upper"
 )
 
 // testPostgresDSN is set by TestMain when INTEGRATION_TEST=1 and holds the
@@ -97,9 +103,8 @@ func TestMain(m *testing.M) {
 	}
 
 	testMySQLDSN = fmt.Sprintf(
-		"mysql://testuser:testpass@%s:%s/testdb",
-		mysqlHost,
-		mysqlPort.Port(),
+		"mysql://testuser:testpass@%s/testdb",
+		net.JoinHostPort(mysqlHost, mysqlPort.Port()),
 	)
 
 	code := m.Run()
@@ -471,12 +476,12 @@ func TestPostgresShortURLStorageCaseSensitiveIDs(t *testing.T) {
 
 	lowerEntry := service.ShortURL{
 		ID:          lower,
-		OriginalURL: "https://example.com/lower",
+		OriginalURL: postgresLowerURL,
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
 	}
 	upperEntry := service.ShortURL{
 		ID:          upper,
-		OriginalURL: "https://example.com/upper",
+		OriginalURL: postgresUpperURL,
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
 	}
 

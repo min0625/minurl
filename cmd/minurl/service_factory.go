@@ -35,8 +35,8 @@ func detectStorageBackend(dsn string) (string, error) {
 		return backendMySQL, nil
 	default:
 		scheme := dsn
-		if idx := strings.Index(dsn, "://"); idx >= 0 {
-			scheme = dsn[:idx]
+		if before, _, ok := strings.Cut(dsn, "://"); ok {
+			scheme = before
 		}
 
 		return "", fmt.Errorf(

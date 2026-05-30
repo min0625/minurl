@@ -16,7 +16,7 @@ func TestFeistelCollisionSample(t *testing.T) {
 	// not bounded by sampleSize.
 	seen := make(map[uint32]bool, sampleSize)
 
-	for i := uint32(0); i < sampleSize; i++ {
+	for i := range uint32(sampleSize) {
 		v := generator.permuted(i)
 
 		if seen[v] {
