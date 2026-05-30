@@ -14,10 +14,10 @@ var (
 
 func newVersionCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "version",
+		Use:   cmdVersion,
 		Short: "Print the minurl CLI version",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			_, err := fmt.Fprintf(cmd.OutOrStdout(), "minurl version %s\n", buildVersion())
+			_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s version %s\n", appName, buildVersion())
 
 			return err
 		},

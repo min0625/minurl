@@ -14,6 +14,8 @@ import (
 	"github.com/min0625/minurl/internal/middleware"
 )
 
+const gzipEncoding = "gzip"
+
 func TestAccessLogMiddlewareDefaultsStatusOK(t *testing.T) {
 	var buf bytes.Buffer
 
@@ -74,7 +76,7 @@ func TestRequestDecompressMiddleware(t *testing.T) {
 		},
 		{
 			name:            "Content-Encoding: gzip decompresses body",
-			contentEncoding: "gzip",
+			contentEncoding: gzipEncoding,
 			body:            func() io.Reader { return gzipBody(t, payload) },
 			wantStatus:      http.StatusOK,
 			wantBody:        payload,
@@ -88,14 +90,14 @@ func TestRequestDecompressMiddleware(t *testing.T) {
 		},
 		{
 			name:            "invalid gzip body returns 400",
-			contentEncoding: "gzip",
+			contentEncoding: gzipEncoding,
 			body:            func() io.Reader { return strings.NewReader("not-gzip-data") },
 			wantStatus:      http.StatusBadRequest,
 			wantBody:        "",
 		},
 		{
 			name:            "decompressed body exceeding limit returns 413",
-			contentEncoding: "gzip",
+			contentEncoding: gzipEncoding,
 			body: func() io.Reader {
 				// Produce a payload that decompresses to just over MaxDecompressedBodySize.
 				oversized := strings.Repeat("a", middleware.MaxDecompressedBodySize+1)

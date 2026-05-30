@@ -15,6 +15,8 @@ import (
 
 var requestValidator = newRequestValidator()
 
+const shortURLTag = "ShortURL"
+
 func newRequestValidator() *validator.Validate {
 	v := validator.New()
 	if err := service.RegisterValidations(v); err != nil {
@@ -47,7 +49,7 @@ type shortURLOutput struct {
 }
 
 type getShortURLInput struct {
-	ID string `path:"id" doc:"Short URL identifier" validate:"required,shortid"`
+	ID string `doc:"Short URL identifier" path:"id" validate:"required,shortid"`
 }
 
 var _ huma.Resolver = (*getShortURLInput)(nil)
@@ -57,7 +59,7 @@ var createShortURLOperation = huma.Operation{
 	Method:      http.MethodPost,
 	Path:        "/api/v1/urls",
 	Summary:     "Create a short URL",
-	Tags:        []string{"ShortURL"},
+	Tags:        []string{shortURLTag},
 }
 
 var getShortURLOperation = huma.Operation{
@@ -65,7 +67,7 @@ var getShortURLOperation = huma.Operation{
 	Method:      http.MethodGet,
 	Path:        "/api/v1/urls/{id}",
 	Summary:     "Get a short URL by ID",
-	Tags:        []string{"ShortURL"},
+	Tags:        []string{shortURLTag},
 }
 
 func (in *getShortURLInput) Resolve(huma.Context) []error {
@@ -73,7 +75,7 @@ func (in *getShortURLInput) Resolve(huma.Context) []error {
 }
 
 type redirectInput struct {
-	ID string `path:"id" doc:"Short URL identifier" validate:"required,shortid"`
+	ID string `doc:"Short URL identifier" path:"id" validate:"required,shortid"`
 }
 
 var _ huma.Resolver = (*redirectInput)(nil)
@@ -84,7 +86,7 @@ func (in *redirectInput) Resolve(huma.Context) []error {
 
 type redirectOutput struct {
 	Status   int
-	Location string `header:"Location" doc:"URL to redirect to"`
+	Location string `doc:"URL to redirect to" header:"Location"`
 }
 
 var redirectShortURLOperation = huma.Operation{
@@ -92,7 +94,7 @@ var redirectShortURLOperation = huma.Operation{
 	Method:        http.MethodGet,
 	Path:          "/api/v1/urls/{id}:redirect",
 	Summary:       "Redirect to original URL",
-	Tags:          []string{"ShortURL"},
+	Tags:          []string{shortURLTag},
 	DefaultStatus: http.StatusFound,
 }
 
