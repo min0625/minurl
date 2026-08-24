@@ -114,3 +114,9 @@ linters:
               desc: Use github.com/go-resty/resty/v2 instead
             - pkg: github.com/aws/smithy-go/ptr$
               desc: Use github.com/aws/aws-sdk-go-v2/aws instead
+
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - goconst
