@@ -2,6 +2,56 @@
 
 A short URL service project implemented in Go.
 
+## Table of Contents
+
+- [Quick Start](#quick-start)
+- [Project Status](#project-status)
+- [Database migrations](#database-migrations)
+- [API Documentation](#api-documentation)
+  - [API Endpoints](#api-endpoints)
+- [Health Check Endpoints](#health-check-endpoints)
+- [Short URL Expiry](#short-url-expiry)
+- [Short URL ID Format](#short-url-id-format)
+- [HTTP Debug Requests](#http-debug-requests)
+- [Tech Stack](#tech-stack)
+- [Local Development](#local-development)
+  - [Run directly](#run-directly)
+  - [CLI commands (Cobra)](#cli-commands-cobra)
+  - [Configuration (flag / env / file)](#configuration-flag--env--file)
+  - [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration)
+  - [DB connection pool configuration](#db-connection-pool-configuration)
+  - [Build version metadata](#build-version-metadata)
+  - [Build and run with Docker](#build-and-run-with-docker)
+  - [Deployment with Docker Compose](#deployment-with-docker-compose)
+  - [Deployment with Kubernetes](#deployment-with-kubernetes)
+  - [Observability (OpenTelemetry)](#observability-opentelemetry)
+  - [Export OpenAPI docs](#export-openapi-docs)
+- [Contributing](#contributing)
+- [Repository Structure](#repository-structure)
+- [License](#license)
+
+## Quick Start
+
+```bash
+git clone https://github.com/min0625/minurl.git
+cd minurl
+go run ./cmd/minurl
+```
+
+This starts the HTTP API on `:8888` using a local SQLite database (`sqlite3://minurl.sqlite3`) — no extra setup required. Then, in another terminal:
+
+```bash
+# Create a short URL
+curl -X POST http://localhost:8888/api/v1/urls \
+  -H "Content-Type: application/json" \
+  -d '{"original_url": "https://github.com/min0625"}'
+
+# Use the returned "id" to redirect to the original URL (replace <id> with the real value)
+curl -i "http://localhost:8888/api/v1/urls/<id>:redirect"
+```
+
+See [Local Development](#local-development) for PostgreSQL/MySQL setup, configuration options, and Docker/Kubernetes deployment.
+
 ## Project Status
 
 Core short URL API is implemented and running:
@@ -25,8 +75,7 @@ API details are maintained in OpenAPI files under `docs/openapi/`:
 - `docs/openapi/openapi.yaml`
 - `docs/openapi/openapi.json`
 
-Online viewer:
-[https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml](https://min0625.github.io/openapi-viewer/?url=https://raw.githubusercontent.com/min0625/minurl/refs/heads/main/docs/openapi/openapi.yaml)
+Online viewer: [OpenAPI Docs](https://redocly.github.io/redoc/3.x/shorturl?url=https%3A%2F%2Fraw.githubusercontent.com%2Fmin0625%2Fminurl%2Frefs%2Fheads%2Fmain%2Fdocs%2Fopenapi%2Fopenapi.yaml&nocors)
 
 ### API Endpoints
 
@@ -107,7 +156,7 @@ Short URLs support an optional `expire_time` field (RFC 3339 / ISO 8601 UTC):
 
 Existing data in the database (rows without `expire_time`) are automatically treated as permanent.
 
-## Short URL ID format
+## Short URL ID Format
 
 Auto-generated short IDs are Base58 strings using the alphabet:
 `123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz`.
@@ -157,20 +206,20 @@ go run ./cmd/minurl version
 
 Global options:
 
-- `--config`: path to a configuration file (applies to all commands)
-- `--http-addr`: HTTP listen address (default `:8888`)
-- `--id-seed`: deterministic seed for ID key derivation (uint32, decimal or 0x hex; empty means built-in default seed)
-- `--storage-dsn`: storage DSN; `sqlite3://path` for SQLite (default `sqlite3://minurl.sqlite3`) or `postgres://...` for PostgreSQL
-- `--log-format`: log output format — `text` (default) or `json`
-- `--otel-enabled`: enable OpenTelemetry tracing (default `false`)
-- `--otel-service-name`: OpenTelemetry service name (default `minurl`)
-- `--otel-exporter`: OpenTelemetry exporter — `stdout` (default) or `otlp`
-- `--otel-endpoint`: OTLP collector endpoint (required when `--otel-exporter=otlp`)
-- `--otel-insecure`: allow insecure OTLP connection (default `true`)
-- `--db-max-open-conns`: max open DB connections, PostgreSQL only (default `25`, `0` = unlimited)
-- `--db-max-idle-conns`: max idle DB connections in pool, PostgreSQL only (default `5`)
-- `--db-conn-max-lifetime`: max connection lifetime, PostgreSQL only (default `30m`, `0` = no limit)
-- `--db-conn-max-idle-time`: max connection idle time, PostgreSQL only (default `10m`, `0` = no limit)
+| Flag | Env var | Default | Description |
+|------|---------|---------|-------------|
+| `--config` | — | (none) | Path to a configuration file (applies to all commands) |
+| `--http-addr` | `MINURL_HTTP_ADDR` | `:8888` | HTTP listen address |
+| `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32, decimal or 0x hex) |
+| `--storage-dsn` | `MINURL_STORAGE_DSN` | `sqlite3://minurl.sqlite3` | Storage DSN — `sqlite3://path` for SQLite, `postgres://...` for PostgreSQL, or `mysql://...` for MySQL |
+| `--log-format` | `MINURL_LOG_FORMAT` | `text` | Log output format — `text` or `json` |
+| `--otel-enabled` | `MINURL_OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
+| `--otel-service-name` | `MINURL_OTEL_SERVICE_NAME` | `minurl` | OpenTelemetry service name |
+| `--otel-exporter` | `MINURL_OTEL_EXPORTER` | `stdout` | OpenTelemetry exporter — `stdout` or `otlp` |
+| `--otel-endpoint` | `MINURL_OTEL_ENDPOINT` | (empty) | OTLP collector endpoint (required when `--otel-exporter=otlp`) |
+| `--otel-insecure` | `MINURL_OTEL_INSECURE` | `true` | Allow insecure OTLP connection |
+
+DB connection pool flags (`--db-max-open-conns`, `--db-max-idle-conns`, `--db-conn-max-lifetime`, `--db-conn-max-idle-time`) apply to the **PostgreSQL and MySQL backends** and are covered separately in [DB connection pool configuration](#db-connection-pool-configuration) below.
 
 Configuration precedence is:
 
@@ -182,23 +231,8 @@ Configuration precedence is:
 ### Configuration (flag / env / file)
 
 This project uses Cobra + Viper to support unified configuration via CLI flags,
-environment variables, and config file.
-
-Environment variable names:
-
-- `MINURL_HTTP_ADDR`
-- `MINURL_ID_SEED`
-- `MINURL_STORAGE_DSN`
-- `MINURL_LOG_FORMAT`
-- `MINURL_OTEL_ENABLED`
-- `MINURL_OTEL_SERVICE_NAME`
-- `MINURL_OTEL_EXPORTER`
-- `MINURL_OTEL_ENDPOINT`
-- `MINURL_OTEL_INSECURE`
-- `MINURL_DB_MAX_OPEN_CONNS`
-- `MINURL_DB_MAX_IDLE_CONNS`
-- `MINURL_DB_CONN_MAX_LIFETIME`
-- `MINURL_DB_CONN_MAX_IDLE_TIME`
+environment variables, and config file. See the flag/env var table above for
+the full list of names and defaults.
 
 Example (env):
 
@@ -218,6 +252,42 @@ PostgreSQL example (flags):
 ```bash
 # Note: sslmode=disable is for local development only; use sslmode=require (or verify-full) in production.
 go run ./cmd/minurl --storage-dsn "postgres://localhost:5432/minurl?sslmode=disable"
+```
+
+Example (flags):
+
+```bash
+go run ./cmd/minurl --http-addr :9090 --id-seed 12345 --storage-dsn sqlite3://./data/minurl.sqlite3
+```
+
+Create a local config from the example:
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+Then edit `config.yaml` as needed, for example:
+
+```yaml
+http-addr: ":9090"
+storage-dsn: "sqlite3://./data/minurl.sqlite3"
+id-seed: "12345"
+log-format: "json"
+otel-enabled: false
+otel-service-name: "minurl"
+otel-exporter: "stdout"
+otel-endpoint: ""
+otel-insecure: true
+db-max-open-conns: 25
+db-max-idle-conns: 5
+db-conn-max-lifetime: "30m"
+db-conn-max-idle-time: "10m"
+```
+
+Then run:
+
+```bash
+go run ./cmd/minurl --config config.yaml
 ```
 
 ### Storage DSN and SSL configuration
@@ -293,41 +363,7 @@ db-conn-max-lifetime: "30m"
 db-conn-max-idle-time: "10m"
 ```
 
-Example (flags):
-
-```bash
-go run ./cmd/minurl --http-addr :9090 --id-seed 12345 --storage-dsn sqlite3://./data/minurl.sqlite3
-```
-
-Create a local config from the example:
-
-```bash
-cp config.example.yaml config.yaml
-```
-
-Then edit `config.yaml` as needed, for example:
-
-```yaml
-http-addr: ":9090"
-storage-dsn: "sqlite3://./data/minurl.sqlite3"
-id-seed: "12345"
-log-format: "json"
-otel-enabled: false
-otel-service-name: "minurl"
-otel-exporter: "stdout"
-otel-endpoint: ""
-otel-insecure: true
-db-max-open-conns: 25
-db-max-idle-conns: 5
-db-conn-max-lifetime: "30m"
-db-conn-max-idle-time: "10m"
-```
-
-Then run:
-
-```bash
-go run ./cmd/minurl --config config.yaml
-```
+### Build version metadata
 
 Version metadata can be injected at build time via `ldflags`:
 
@@ -380,6 +416,7 @@ make docker-run DOCKER_PORT=9090:8888
 Example Docker Compose configurations are available in `deploy/docker-compose/`:
 
 - `docker-compose.postgres.example.yml` — PostgreSQL backend with nginx
+- `docker-compose.mysql.example.yml` — MySQL backend with nginx
 - `docker-compose.sqlite.example.yml` — SQLite backend with nginx
 
 #### Setup
@@ -390,12 +427,16 @@ Example Docker Compose configurations are available in `deploy/docker-compose/`:
 # For PostgreSQL:
 cp deploy/docker-compose/docker-compose.postgres.example.yml deploy/docker-compose/docker-compose.postgres.yml
 
+# For MySQL:
+cp deploy/docker-compose/docker-compose.mysql.example.yml deploy/docker-compose/docker-compose.mysql.yml
+
 # For SQLite:
 cp deploy/docker-compose/docker-compose.sqlite.example.yml deploy/docker-compose/docker-compose.sqlite.yml
 ```
 
 2. Edit the copied file and customize environment variables:
    - **PostgreSQL**: Set `POSTGRES_PASSWORD`, `POSTGRES_USER`, and ensure the DSN in `MINURL_STORAGE_DSN` uses appropriate `sslmode` (see notes below)
+   - **MySQL**: Set `MYSQL_PASSWORD`, `MYSQL_USER`, `MYSQL_ROOT_PASSWORD`, and ensure the DSN in `MINURL_STORAGE_DSN` uses an appropriate `tls` setting (see notes below)
    - **SQLite**: Adjust `MINURL_STORAGE_DSN` if needed
 
 3. Start services:
@@ -403,6 +444,9 @@ cp deploy/docker-compose/docker-compose.sqlite.example.yml deploy/docker-compose
 ```bash
 # PostgreSQL:
 docker-compose -f deploy/docker-compose/docker-compose.postgres.yml up
+
+# MySQL:
+docker-compose -f deploy/docker-compose/docker-compose.mysql.yml up
 
 # SQLite:
 docker-compose -f deploy/docker-compose/docker-compose.sqlite.yml up
@@ -415,6 +459,13 @@ docker-compose -f deploy/docker-compose/docker-compose.sqlite.yml up
   - **Development**: `sslmode=disable` is acceptable for local-only setups.
   - **Production**: Always use `sslmode=require` or `sslmode=verify-full` to enforce encrypted connections.
   - The example file includes comments on how to configure this per environment.
+- **MySQL credentials**: The example includes default credentials (`minurl:minurl`, plus a `rootpassword` root password) for local development. **In production**, replace with secure, randomly generated credentials. Consider using Docker secrets or an external secrets manager.
+- **TLS for MySQL**:
+  - **Development**: an omitted or `false` `tls` value is acceptable for local-only setups.
+  - **Production**: Always use `tls=true` to enforce encrypted connections with system CA verification.
+    A private CA requires registering a named TLS config in code via `mysql.RegisterTLSConfig`; minurl does not
+    do this today, so a DSN using an unregistered name (for example `tls=custom`) is rejected at startup.
+  - The example file includes comments on how to configure this per environment.
 
 ### Deployment with Kubernetes
 
@@ -422,6 +473,7 @@ Example Kubernetes manifests are available in `deploy/kubernetes/`:
 
 - `minurl-sqlite.example.yaml` — SQLite backend (single replica, PVC)
 - `minurl-postgres.example.yaml` — PostgreSQL backend (multi-replica)
+- `minurl-mysql.example.yaml` — MySQL backend (multi-replica)
 
 #### Setup
 
@@ -438,6 +490,9 @@ docker push <your-registry>/minurl:latest
 # For PostgreSQL:
 cp deploy/kubernetes/minurl-postgres.example.yaml deploy/kubernetes/minurl-postgres.yaml
 
+# For MySQL:
+cp deploy/kubernetes/minurl-mysql.example.yaml deploy/kubernetes/minurl-mysql.yaml
+
 # For SQLite:
 cp deploy/kubernetes/minurl-sqlite.example.yaml deploy/kubernetes/minurl-sqlite.yaml
 ```
@@ -448,14 +503,18 @@ cp deploy/kubernetes/minurl-sqlite.example.yaml deploy/kubernetes/minurl-sqlite.
 # PostgreSQL:
 kubectl apply -f deploy/kubernetes/minurl-postgres.yaml
 
+# MySQL:
+kubectl apply -f deploy/kubernetes/minurl-mysql.yaml
+
 # SQLite:
 kubectl apply -f deploy/kubernetes/minurl-sqlite.yaml
 ```
 
 #### Notes
 
-- **SQLite**: requires `replicas: 1` due to `ReadWriteOnce` PVC. For horizontal scaling, use PostgreSQL.
+- **SQLite**: requires `replicas: 1` due to `ReadWriteOnce` PVC. For horizontal scaling, use PostgreSQL or MySQL.
 - **PostgreSQL**: the manifest does **not** include a PostgreSQL deployment. Use a managed database service or a separate Postgres StatefulSet. Create the `minurl-postgres` Secret with your DSN before applying (see USAGE comment in the manifest).
+- **MySQL**: the manifest does **not** include a MySQL deployment. Use a managed database service or a separate MySQL StatefulSet. Create the `minurl-mysql` Secret with your DSN before applying (see USAGE comment in the manifest).
 - **Secrets**: never commit real credentials. Use `kubectl create secret` or a secrets manager.
 
 ### Observability (OpenTelemetry)

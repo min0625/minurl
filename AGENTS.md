@@ -52,7 +52,7 @@ Defined in `internal/service/model.go`:
 | Entry | `cmd/minurl` | `main.go`, `server.go`, `service_factory.go`, `config.go` |
 | Handler | `internal/handler` | `short_url.go`, `health.go` |
 | Service | `internal/service` | `short_url.go`, `model.go`, `validation.go`, `id_generator.go` |
-| Store | `internal/store` | `storage.go` (SQLite), `postgres.go`, `mysql.go` |
+| Store | `internal/store` | `sqlite.go` (SQLite), `postgres.go`, `mysql.go` |
 | Test helpers | `internal/testhelpers` | In-memory fakes for unit tests |
 | HTTP server | `internal/httpserver` | HTTP server lifecycle |
 | Middleware | `internal/middleware` | Logging, recovery, decompression |
@@ -126,7 +126,7 @@ SQLite, PostgreSQL, and MySQL use [golang-migrate/migrate v4](https://github.com
 See the full procedure in [CONTRIBUTING.md → Adding a New Storage Column](CONTRIBUTING.md#adding-a-new-storage-column).
 
 Summary:
-1. Add `000002_<name>.up.sql` + `down.sql` to **all three** migration directories.
-2. Update `CreateIfAbsent()` and `GetByID()` in `storage.go`, `postgres.go`, and `mysql.go`.
+1. Add `000003_<name>.up.sql` + `down.sql` (the next unused version — `000002` is already taken) to **all three** migration directories.
+2. Update `CreateIfAbsent()` and `GetByID()` in `sqlite.go`, `postgres.go`, and `mysql.go`.
 3. Update `internal/testhelpers/storage.go` if needed.
 4. Run `make gen`.

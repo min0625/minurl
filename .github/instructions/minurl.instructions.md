@@ -55,7 +55,7 @@ Defined in `internal/service/model.go`:
 
 ## Storage Layer Conventions
 
-- SQLite storage: `internal/store/storage.go` + `internal/store/sqlite.go`
+- SQLite storage: `internal/store/sqlite.go`
 - PostgreSQL storage: `internal/store/postgres.go`
 - MySQL storage: `internal/store/mysql.go`
 - Test storage (in-memory): `internal/testhelpers/storage.go`
@@ -74,8 +74,8 @@ Migrations are managed by **[golang-migrate/migrate v4](https://github.com/golan
 See the full procedure in [CONTRIBUTING.md → Adding a New Storage Column](../../CONTRIBUTING.md#adding-a-new-storage-column).
 
 Summary:
-1. Add `000002_<name>.up.sql` + `down.sql` to **all three** migration directories.
-2. Update `CreateIfAbsent()` and `GetByID()` in `storage.go`, `postgres.go`, and `mysql.go`.
+1. Add `000003_<name>.up.sql` + `down.sql` (the next unused version — `000002` is already taken) to **all three** migration directories.
+2. Update `CreateIfAbsent()` and `GetByID()` in `sqlite.go`, `postgres.go`, and `mysql.go`.
 3. Update `internal/testhelpers/storage.go` if the field needs special handling.
 4. Run `make gen`.
 

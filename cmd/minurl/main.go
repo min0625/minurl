@@ -82,7 +82,7 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().String(
 		"storage-dsn",
 		"sqlite3://minurl.sqlite3",
-		"storage DSN: sqlite3://path for SQLite (default) or postgres://... for PostgreSQL",
+		"storage DSN: sqlite3://path for SQLite (default), postgres://... for PostgreSQL, or mysql://... for MySQL",
 	)
 	cmd.PersistentFlags().String("log-format", "text", "log output format: text or json")
 	cmd.PersistentFlags().Bool("otel-enabled", false, "enable OpenTelemetry tracing")
@@ -94,22 +94,22 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().Int(
 		"db-max-open-conns",
 		25,
-		"max open DB connections, PostgreSQL only (0 = unlimited, not recommended)",
+		"max open DB connections, PostgreSQL and MySQL only (0 = unlimited, not recommended)",
 	)
 	cmd.PersistentFlags().Int(
 		"db-max-idle-conns",
 		5,
-		"max idle DB connections retained in pool, PostgreSQL only (0 = none retained)",
+		"max idle DB connections retained in pool, PostgreSQL and MySQL only (0 = none retained)",
 	)
 	cmd.PersistentFlags().String(
 		"db-conn-max-lifetime",
 		"30m",
-		"max connection lifetime, PostgreSQL only (0 = no limit, e.g. 30m, 1h)",
+		"max connection lifetime, PostgreSQL and MySQL only (0 = no limit, e.g. 30m, 1h)",
 	)
 	cmd.PersistentFlags().String(
 		"db-conn-max-idle-time",
 		"10m",
-		"max connection idle time, PostgreSQL only (0 = no limit, e.g. 10m, 30m)",
+		"max connection idle time, PostgreSQL and MySQL only (0 = no limit, e.g. 10m, 30m)",
 	)
 	cmd.AddCommand(newOpenAPICommand())
 	cmd.AddCommand(newVersionCommand())
