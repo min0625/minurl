@@ -20,6 +20,7 @@ A short URL service project implemented in Go.
   - [Configuration (flag / env / file)](#configuration-flag--env--file)
   - [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration)
   - [DB connection pool configuration](#db-connection-pool-configuration)
+  - [Build version metadata](#build-version-metadata)
   - [Build and run with Docker](#build-and-run-with-docker)
   - [Deployment with Docker Compose](#deployment-with-docker-compose)
   - [Deployment with Kubernetes](#deployment-with-kubernetes)
@@ -45,8 +46,8 @@ curl -X POST http://localhost:8888/api/v1/urls \
   -H "Content-Type: application/json" \
   -d '{"original_url": "https://github.com/min0625"}'
 
-# Use the returned "id" to redirect to the original URL
-curl -i http://localhost:8888/api/v1/urls/<id>:redirect
+# Use the returned "id" to redirect to the original URL (replace <id> with the real value)
+curl -i "http://localhost:8888/api/v1/urls/<id>:redirect"
 ```
 
 See [Local Development](#local-development) for PostgreSQL/MySQL setup, configuration options, and Docker/Kubernetes deployment.
@@ -362,6 +363,8 @@ db-conn-max-lifetime: "30m"
 db-conn-max-idle-time: "10m"
 ```
 
+### Build version metadata
+
 Version metadata can be injected at build time via `ldflags`:
 
 ```bash
@@ -459,7 +462,9 @@ docker-compose -f deploy/docker-compose/docker-compose.sqlite.yml up
 - **MySQL credentials**: The example includes default credentials (`minurl:minurl`, plus a `rootpassword` root password) for local development. **In production**, replace with secure, randomly generated credentials. Consider using Docker secrets or an external secrets manager.
 - **TLS for MySQL**:
   - **Development**: an omitted or `false` `tls` value is acceptable for local-only setups.
-  - **Production**: Always use `tls=true` (or a custom CA via `tls=custom`) to enforce encrypted connections.
+  - **Production**: Always use `tls=true` to enforce encrypted connections with system CA verification.
+    A private CA requires registering a named TLS config in code via `mysql.RegisterTLSConfig`; minurl does not
+    do this today, so a DSN using an unregistered name (for example `tls=custom`) is rejected at startup.
   - The example file includes comments on how to configure this per environment.
 
 ### Deployment with Kubernetes

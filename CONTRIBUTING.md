@@ -101,10 +101,11 @@ After any functional change, update **all** of the following that apply:
 
 When adding a new column to `short_urls`:
 
-1. Create migration files for **all three** backends:
-   - `internal/store/migrations/sqlite/000002_<name>.{up,down}.sql`
-   - `internal/store/migrations/postgres/000002_<name>.{up,down}.sql`
-   - `internal/store/migrations/mysql/000002_<name>.{up,down}.sql`
+1. Create migration files for **all three** backends, using the next unused version number
+   (`000002` is already taken by `add_expire_time`; a duplicate version breaks golang-migrate at startup):
+   - `internal/store/migrations/sqlite/000003_<name>.{up,down}.sql`
+   - `internal/store/migrations/postgres/000003_<name>.{up,down}.sql`
+   - `internal/store/migrations/mysql/000003_<name>.{up,down}.sql`
 2. Update `CreateIfAbsent()` and `GetByID()` in:
    - `internal/store/sqlite.go` (SQLite)
    - `internal/store/postgres.go`
