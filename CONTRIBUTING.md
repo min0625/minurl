@@ -106,7 +106,7 @@ When adding a new column to `short_urls`:
    - `internal/store/migrations/postgres/000002_<name>.{up,down}.sql`
    - `internal/store/migrations/mysql/000002_<name>.{up,down}.sql`
 2. Update `CreateIfAbsent()` and `GetByID()` in:
-   - `internal/store/storage.go` (SQLite)
+   - `internal/store/sqlite.go` (SQLite)
    - `internal/store/postgres.go`
    - `internal/store/mysql.go`
 3. Update `internal/testhelpers/storage.go` if the field needs special handling.
