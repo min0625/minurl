@@ -1,4 +1,4 @@
 [tools]
 go = "1.26.2"
-golangci-lint = "2.12.2"
+golangci-lint = "2.13.1"
 kiota = "1.31.1"

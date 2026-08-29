@@ -1,31 +1,27 @@
 # https://golangci-lint.run/docs/configuration/file/
 version: "2"
 
-run:
-  timeout: 5m
-
 issues:
   whole-files: true
-  max-same-issues: 50
 
-severity:
-  default: error
+  max-same-issues: 0       # 0 = unlimited; default 3
+  max-issues-per-linter: 0 # 0 = unlimited; default 50
+
+  uniq-by-line: false      # default true hides other linters' findings on the same line
 
 formatters:
   enable:
-    - gci
-    - gofmt
+    # goimports rides along with gofumpt because it alone drops unused imports.
     - gofumpt
     - goimports
     - golines
 
   settings:
-    gofmt:
-      rewrite-rules:
-        - pattern: "interface{}"
-          replacement: "any"
     gofumpt:
-      extra-rules: true
+      extra:
+        group-params: true
+        clothe-returns: true
+        balance-calls: true
     golines:
       max-len: 120
 
@@ -42,9 +38,7 @@ linters:
     # Additional
     - bodyclose
     - canonicalheader
-    - copyloopvar
     - depguard
-    - dupword
     - durationcheck
     - errchkjson
     - errname
@@ -55,11 +49,9 @@ linters:
     - gocognit
     - goconst
     - gocritic
-    - goheader
     - gomodguard_v2
     - goprintffuncname
     - gosec
-    - intrange
     - loggercheck
     - mirror
     - misspell
@@ -90,17 +82,20 @@ linters:
     - usestdlibvars
     - usetesting
     - wastedassign
-    - whitespace
     - wsl_v5
 
   settings:
     govet:
       enable:
+        - deepequalerrors
         - nilness
+        - reflectvaluecompare
+        - sortslice
+        - unusedwrite
 
-    modernize:
-      disable:
-        - omitzero
+    nolintlint:
+      require-specific: true
+      require-explanation: true
 
     depguard:
       rules:
@@ -108,12 +103,33 @@ linters:
           deny:
             - pkg: github.com/pkg/errors
               desc: Should be replaced by standard lib errors package
-            - pkg: golang.org/x/exp/slices
-              desc: Should be replaced by standard lib slices package
-            - pkg: github.com/go-resty/resty$
-              desc: Use github.com/go-resty/resty/v2 instead
-            - pkg: github.com/aws/smithy-go/ptr$
-              desc: Use github.com/aws/aws-sdk-go-v2/aws instead
+
+    gomodguard_v2:
+      # A local `replace` that reaches main breaks the tagged release build.
+      # Only sees directly imported modules; an indirect dep's replace slips through.
+      local-replace-directives: true
+
+      # Bar for an entry: archived or known-vulnerable, AND still reached for
+      # directly today because old tutorials point there.
+      blocked:
+        - module: github.com/Azure/azure-sdk-for-go
+          reason: Track 1 (services/, storage/, profiles/) retired 2023-09-30; use the sdk/ modules (track 2)
+        - module: github.com/aws/aws-sdk-go
+          recommendations:
+            - github.com/aws/aws-sdk-go-v2
+          reason: End-of-support since 2025-07-31; no further updates, including security fixes
+        - module: github.com/dgrijalva/jwt-go
+          recommendations:
+            - github.com/golang-jwt/jwt/v5
+          reason: Unmaintained; golang-jwt is the community continuation
+        - module: github.com/golang/mock
+          recommendations:
+            - go.uber.org/mock
+          reason: Archived upstream; go.uber.org/mock is the maintained fork
+        - module: github.com/satori/go.uuid
+          recommendations:
+            - github.com/google/uuid
+          reason: Unmaintained; on Go 1.27+ prefer the stdlib uuid package
 
   exclusions:
     rules:
