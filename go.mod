@@ -1,6 +1,6 @@
 module github.com/min0625/minurl
 
-go 1.26.2
+go 1.26.8
 
 require (
 	github.com/alexliesenfeld/health v0.8.1

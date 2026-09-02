@@ -182,7 +182,7 @@ This file is intended for local/manual API debugging (similar to a lightweight P
 
 ## Tech Stack
 
-- Language: Go 1.26.2
+- Language: Go 1.26.8
 - Module: `github.com/min0625/minurl`
 - Container: multi-stage Docker build + distroless runtime
 
@@ -579,8 +579,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, make targets, codi
 Quick reference:
 
 ```bash
-make fix      # tidy + lint auto-fix
-make check    # tidy diff + lint + test
+make fix      # tidy + lint auto-fix, then lint (fails on what --fix could not repair)
+make check    # all prek hooks (tidy diff + lint + test included)
 make gen      # regenerate OpenAPI docs and Kiota Go client
 make ci       # full CI check (same as CI pipeline)
 ```

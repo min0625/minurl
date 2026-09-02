@@ -1,9 +1,77 @@
+# A green hook is not proof it checked anything: `--all-files` only guarantees prek
+# hands the hook a file list, not that the hook consults it. Some check git state
+# instead (staged files, mid-merge) and CI's clean checkout has neither -- so they
+# run, pass, and weigh nothing. Read a hook's source before adding it.
 repos:
+  # prek's built-in Rust implementations of the pre-commit-hooks checks. Naming
+  # the upstream repo URL here would run the same native code anyway (prek's
+  # fast path ignores `rev`), but would also clone the repo and build a Python
+  # environment that is never executed. prek-only: upstream `pre-commit`
+  # rejects this config with `Missing required key: rev`.
+  - repo: builtin
+    hooks:
+      - id: check-added-large-files
+        # Without this the hook intersects its file list with `git diff --staged
+        # --diff-filter=A`, which is empty on CI's clean checkout -- it would pass
+        # green having weighed nothing.
+        args: [--enforce-all]
+      - id: check-case-conflict
+      - id: check-illegal-windows-names
+      - id: check-merge-conflict
+        # Same shape: the hook returns 0 early unless .git/MERGE_MSG exists, and CI
+        # is never mid-merge.
+        args: [--assume-in-merge]
+      - id: check-symlinks
+      - id: check-yaml
+        # The Kubernetes manifests under deploy/ are `---`-separated multi-doc files.
+        args: [--allow-multiple-documents]
+      - id: detect-private-key
+      # `make gen` and the devcontainer CLI emit files all three of these would
+      # rewrite. Fixing them here only makes the next regeneration dirty, which
+      # `make ci` then fails on via `git diff --exit-code`.
+      - id: end-of-file-fixer
+        exclude: &generated ^(docs/openapi/|pkg/kiota/go/gen/|\.devcontainer/devcontainer-lock\.json$)
+      - id: mixed-line-ending
+        exclude: *generated
+      - id: trailing-whitespace
+        exclude: *generated
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      # Its entry hard-codes --staged, so CI (nothing staged) scans an empty diff and
+      # is always green. Deliberate: this stays a local commit-time guard.
+      - id: gitleaks
+
+  # These entries must stay leaf targets. `make check` runs prek itself, so
+  # pointing a hook at it would make prek recurse into itself.
+  #
+  # `always_run: true` is required: these are repo-wide checks, and without it
+  # prek skips a hook whose file list comes back empty -- so a commit that only
+  # *deletes* files (no path survives the filter) would skip lint and test
+  # entirely, which is exactly when they matter most.
   - repo: local
     hooks:
-      - id: make-check
-        name: make-check
-        entry: make check
+      - id: check-tidy
+        name: check-tidy
+        entry: make check-tidy
         language: system
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+
+      - id: lint
+        name: lint
+        entry: make lint
+        language: system
+        always_run: true
+        pass_filenames: false
+        require_serial: true
+
+      - id: test
+        name: test
+        entry: make test
+        language: system
+        always_run: true
         pass_filenames: false
         require_serial: true

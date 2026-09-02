@@ -8,6 +8,7 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -39,6 +40,6 @@ jobs:
           context: .
           push: true
           build-args: |
-            LDFLAGS=-s -w -X main.version=${{ github.ref_name }} -X main.commit=${{ github.sha }}
+            LDFLAGS=-s -w -X main.version=${{ steps.meta.outputs.version }} -X main.commit=${{ github.sha }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

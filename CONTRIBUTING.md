@@ -6,15 +6,22 @@ This document is the canonical reference for development workflow, coding conven
 
 ## Prerequisites
 
-- Go 1.26.2+
+- Go 1.26.8+
 - Docker (for integration tests and container builds)
 - [`golangci-lint`](https://golangci-lint.run/) — install via `mise install` or follow the official docs
+- [`prek`](https://prek.j178.dev/) — runs the git hooks and `make check`; install via `mise install`
 - [`kiota`](https://learn.microsoft.com/en-us/openapi/kiota/) CLI — required only when regenerating the Go client
 
 Install all tools at once with:
 
 ```bash
 mise install
+```
+
+Then install the git hooks (the devcontainer's `post_create.sh` does this for you):
+
+```bash
+prek install --overwrite --prepare-hooks
 ```
 
 ## Development Setup
@@ -35,10 +42,10 @@ go run ./cmd/minurl
 
 | Target | Description |
 |--------|-------------|
-| `make fix` | `go mod tidy` + golangci-lint auto-fix |
-| `make lint` | Run golangci-lint |
+| `make fix` | `go mod tidy` + golangci-lint auto-fix, then `make lint` |
+| `make lint` | `golangci-lint config verify` + `golangci-lint run` |
 | `make test` | Race-enabled `go test ./...` |
-| `make check` | tidy diff + lint + test |
+| `make check` | Every prek hook over all files (tidy diff + lint + test included) |
 | `make gen` | Regenerate OpenAPI docs **and** Kiota Go client |
 | `make openapi` | Regenerate OpenAPI docs only |
 | `make kiota` | Regenerate Kiota client (runs `openapi` first) |
@@ -47,7 +54,8 @@ go run ./cmd/minurl
 | `make docker-build` | Build Docker image |
 | `make docker-run` | Run Docker container |
 
-Run `make check` before every commit. CI (`make ci`) additionally verifies generated files are in sync.
+`make check` runs every hook in `.pre-commit-config.yaml` over all tracked files — the same
+gate `git commit` runs, but repo-wide. Run it before every commit. CI (`make ci`) additionally verifies generated files are in sync.
 
 ## Coding Conventions
 
