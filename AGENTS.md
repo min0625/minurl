@@ -19,7 +19,7 @@ MinURL is a Go short URL service. The core API is fully implemented — it suppo
 
 ## Project Facts
 
-- Go version: 1.26.2
+- Go version: 1.26.8
 - Main module: `github.com/min0625/minurl`
 - Main entry point: `cmd/minurl/main.go`
 - CLI subcommands: `openapi`, `version`, `healthcheck`
@@ -42,6 +42,25 @@ Defined in `internal/service/model.go`:
 | `OriginalURL` | `string` | `original_url` | **Yes** | Must be a valid URL |
 | `ExpireTime` | `*time.Time` | `expire_time` | No | RFC 3339 UTC; omit/null = permanent |
 | `CreateTime` | `time.Time` | `create_time` | No | readOnly — set by server |
+
+### Struct tag conventions
+
+**`json` tags — default to `omitzero`** (Go 1.24+; the repo targets Go 1.26).
+
+Use `omitempty` only on a slice/map field where a non-nil but zero-length value
+should also be omitted, and add a comment saying so. `omitzero` omits a nil
+slice/map but keeps `[]` / `{}`.
+
+Rationale: `omitempty` has no effect at all on struct fields such as `time.Time`
+(the `modernize` linter flags this), and `encoding/json/v2` redefines `omitempty`
+in terms of the encoded JSON rather than the Go value, so its meaning shifts for
+bools, numbers, pointers and interfaces. `omitzero` is defined on the Go value
+and behaves identically in v1 and v2.
+
+**`validate` tags — keep `omitempty`.** This is go-playground/validator's own
+tag vocabulary, unrelated to `encoding/json`. Its `omitzero` is equivalent here
+and `omitempty` is not deprecated, so there is no reason to churn it. A bare
+`validate:"omitempty"` with no rule after it does nothing — drop the tag instead.
 
 **Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
 
@@ -80,7 +99,7 @@ Quick reference:
 
 | Target | What it does |
 |--------|-------------|
-| `make check` | tidy diff + lint + test |
+| `make check` | Every prek hook over all files (tidy diff + lint + test included) |
 | `make gen` | regenerate OpenAPI docs and Kiota client |
 | `make ci` | check + gen + `git diff --exit-code` |
 | `make test` | race-enabled `go test ./...` |
