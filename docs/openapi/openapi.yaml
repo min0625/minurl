@@ -82,9 +82,14 @@ components:
             - "null"
         id:
           description: Unique id
+          maxLength: 12
+          pattern: ^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$
+          patternDescription: Base58 characters
           type: string
         original_url:
-          description: Original URL to shorten
+          description: Original URL to shorten (http or https)
+          maxLength: 8192
+          minLength: 1
           type: string
       required:
         - original_url
@@ -129,6 +134,9 @@ paths:
           required: true
           schema:
             description: Short URL identifier
+            maxLength: 12
+            pattern: ^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$
+            patternDescription: Base58 characters
             type: string
       responses:
         "200":
@@ -156,6 +164,9 @@ paths:
           required: true
           schema:
             description: Short URL identifier
+            maxLength: 12
+            pattern: ^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$
+            patternDescription: Base58 characters
             type: string
       responses:
         "302":

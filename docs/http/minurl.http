@@ -84,8 +84,34 @@ GET {{baseUrl}}/api/v1/urls/Past HTTP/1.1
 ### Redirect already-expired short URL (expect HTTP 404)
 GET {{baseUrl}}/api/v1/urls/Past:redirect HTTP/1.1
 
+### Create short URL with a rejected scheme (expected HTTP 422)
+# Only absolute http/https URLs with a host are accepted.
+# Same for data:, file:, ftp:, //example.com and https://user@example.com/.
+# @name createShortURLWithRejectedScheme
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
+content-type: application/json
+
+{
+  "original_url": "javascript:alert(1)"
+}
+
+### Create short URL with an invalid custom ID (expected HTTP 422)
+# IDs are Base58: 1-12 characters, no 0, O, I or l.
+# @name createShortURLWithInvalidID
+POST {{baseUrl}}/api/v1/urls HTTP/1.1
+content-type: application/json
+
+{
+  "original_url": "{{sampleOriginalURL}}",
+  "id": "bad*id"
+}
+
+### Get short URL with a malformed ID (expected HTTP 422, not 404)
+GET {{baseUrl}}/api/v1/urls/bad*id HTTP/1.1
+
 ### Not found example (expected HTTP 404)
-GET {{baseUrl}}/api/v1/urls/NOT_FOUND_EXAMPLE HTTP/1.1
+# The ID must still be valid Base58, or the schema rejects it with 422 before lookup.
+GET {{baseUrl}}/api/v1/urls/zzzzzz HTTP/1.1
 
 ### Redirect not found example (expected HTTP 404)
-GET {{baseUrl}}/api/v1/urls/NOT_FOUND_EXAMPLE:redirect HTTP/1.1
+GET {{baseUrl}}/api/v1/urls/zzzzzz:redirect HTTP/1.1

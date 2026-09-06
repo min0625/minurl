@@ -46,8 +46,8 @@ Defined in `internal/service/model.go`:
 
 | Field | Type | JSON key | Required | Notes |
 |-------|------|----------|----------|-------|
-| `ID` | `string` | `id` | No | Base58 ≤12 chars; auto-generated if omitted |
-| `OriginalURL` | `string` | `original_url` | **Yes** | Must be a valid URL |
+| `ID` | `string` | `id` | No | Base58 1–12 chars, case-sensitive; auto-generated if omitted |
+| `OriginalURL` | `string` | `original_url` | **Yes** | Absolute `http`/`https` URL with a host, ≤8192 chars, no userinfo |
 | `ExpireTime` | `*time.Time` | `expire_time` | No | RFC 3339 UTC; omit/null = permanent |
 | `CreateTime` | `time.Time` | `create_time` | No | readOnly — set by server |
 
@@ -65,10 +65,48 @@ in terms of the encoded JSON rather than the Go value, so its meaning shifts for
 bools, numbers, pointers and interfaces. `omitzero` is defined on the Go value
 and behaves identically in v1 and v2.
 
-**`validate` tags — keep `omitempty`.** This is go-playground/validator's own
-tag vocabulary, unrelated to `encoding/json`. Its `omitzero` is equivalent here
-and `omitempty` is not deprecated, so there is no reason to churn it. A bare
-`validate:"omitempty"` with no rule after it does nothing — drop the tag instead.
+**Tag order — `json`/`path`, `doc`, presence flag
+(`required`/`nullable`/`readOnly`), then the schema constraints `minLength`,
+`maxLength`, `pattern`, `patternDescription`.** Wire name, then what the field is, then the
+rules, cheapest to read first; the long regex-shaped values stay at the end where
+they do not push everything else off screen.
+
+Write them in that order, then run `golangci-lint fmt` and keep what it produces:
+`golines` pads tag keys into columns and moves a key that arrives late into the
+column the earlier fields established, so the committed order is its own. The
+alignment is why these lines run past 200 characters; `golines` also owns that,
+`lll` is not enabled.
+
+**Validation lives in the request schema, not in a second validator.** huma checks
+the tags above against the parsed JSON *before* it unmarshals into the struct, so
+it can tell an absent key from a zero value, its errors carry `location` and
+`value`, and the rules show up in the generated OpenAPI. A struct-level validator
+sees none of that.
+
+**A rule that belongs to a field belongs to its type.** `service.OriginalURL` is
+the worked example: `huma.SchemaProvider` gives it `minLength`/`maxLength` (reading
+`MaxOriginalURLLen` directly, which a struct tag cannot do), and
+`huma.ResolverWithPath` gives it the scheme/host/userinfo check that JSON Schema
+cannot express. huma calls the resolver for every field of that type, nested and
+inside slices, and supplies the error location itself — no hand-written
+`"body.original_url"` to go stale. Adding a field means picking the type.
+
+`ShortURL.ID` is the deliberate exception: its rules are expressible as `maxLength`
+and `pattern`, so it stays on tags rather than becoming a named type. Turning it
+into one would reach the service and storage signatures and ~36 assignments in
+store tests, to remove three repeated tags that `TestRegisterPublishesShortIDConstraints`
+already pins to `Base58Alphabet` and `MaxShortURLIDLen`. Revisit if a third `{id}`
+endpoint appears.
+
+Two things such a resolver must respect: a value-typed field reaches it as the zero
+value when the key is absent, so return early on empty rather than inventing an
+error for a field nobody sent (a pointer field is skipped instead); and it runs on
+request input only — data read back from storage is never revalidated, which is why
+the redirect handler calls `IsValidOriginalURL` itself.
+
+Rules that need I/O or business state (does this ID exist, is the caller over
+quota) are not validation — they belong in the service layer as sentinel errors the
+handler maps to a status.
 
 **Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
 

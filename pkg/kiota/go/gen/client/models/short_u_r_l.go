@@ -15,7 +15,7 @@ type ShortURL struct {
     expire_time *i336074805fc853987abe6f7fe3ad97a6a6f3077a16391fec744f671a015fbd7e.Time
     // Unique id
     id *string
-    // Original URL to shorten
+    // Original URL to shorten (http or https)
     original_url *string
     // A URL to the JSON Schema for this object.
     schema *string
@@ -102,7 +102,7 @@ func (m *ShortURL) GetFieldDeserializers()(map[string]func(i878a80d2330e89d26896
 func (m *ShortURL) GetId()(*string) {
     return m.id
 }
-// GetOriginalUrl gets the original_url property value. Original URL to shorten
+// GetOriginalUrl gets the original_url property value. Original URL to shorten (http or https)
 // returns a *string when successful
 func (m *ShortURL) GetOriginalUrl()(*string) {
     return m.original_url
@@ -146,7 +146,7 @@ func (m *ShortURL) SetExpireTime(value *i336074805fc853987abe6f7fe3ad97a6a6f3077
 func (m *ShortURL) SetId(value *string)() {
     m.id = value
 }
-// SetOriginalUrl sets the original_url property value. Original URL to shorten
+// SetOriginalUrl sets the original_url property value. Original URL to shorten (http or https)
 func (m *ShortURL) SetOriginalUrl(value *string)() {
     m.original_url = value
 }

@@ -5,6 +5,8 @@ package service_test
 import (
 	"context"
 	"errors"
+	"math"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -170,35 +172,6 @@ func TestShortURLServiceCreateGeneratesUniqueBase58IDs(t *testing.T) {
 		}
 
 		seen[entry.ID] = struct{}{}
-	}
-}
-
-func TestIsValidShortURLID(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name    string
-		id      string
-		wantErr bool
-	}{
-		{"valid base58", "123456789A", false},
-		{"empty", "", true},
-		{"leading space", " abc", true},
-		{"invalid character", "abcd!", true},
-		{"disallowed base58 char 0", "0", true},
-		{"disallowed base58 char O", "O", true},
-		{"disallowed base58 char I", "I", true},
-		{"disallowed base58 char l", "l", true},
-		{"too long", "123456789ABCD", true},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := service.IsValidShortURLID(tt.id)
-			if (err != nil) != tt.wantErr {
-				t.Fatalf("IsValidShortURLID(%q) error = %v, wantErr %v", tt.id, err, tt.wantErr)
-			}
-		})
 	}
 }
 
@@ -485,5 +458,111 @@ func TestShortURLServiceGetNilExpireTimeIsPermanent(t *testing.T) {
 
 	if got.ExpireTime != nil {
 		t.Fatalf("Get() ExpireTime = %v, want nil for permanent URL", got.ExpireTime)
+	}
+}
+
+func TestIsValidOriginalURL(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		rawURL  string
+		wantErr bool
+	}{
+		{name: "http", rawURL: "http://example.com/path"},
+		{name: "https", rawURL: "https://example.com/path?q=1#frag"},
+		{name: "unicode host", rawURL: "https://例え.テスト/path"},
+		{name: "host with port", rawURL: "http://example.com:8080/path"},
+		{name: "empty", rawURL: "", wantErr: true},
+		{name: "javascript", rawURL: "javascript:alert(1)", wantErr: true},
+		{name: "data", rawURL: "data:text/html,<h1>hi</h1>", wantErr: true},
+		{name: "file", rawURL: "file:///etc/passwd", wantErr: true},
+		{name: "ftp", rawURL: "ftp://example.com/x", wantErr: true},
+		{name: "protocol relative", rawURL: "//example.com", wantErr: true},
+		{name: "relative path", rawURL: "/relative/path", wantErr: true},
+		{name: "no host", rawURL: "http://", wantErr: true},
+		{name: "port without host", rawURL: "http://:8080/", wantErr: true},
+		{name: "space in host", rawURL: "http://exa mple.com", wantErr: true},
+		{name: "userinfo", rawURL: "https://www.example.com@evil.example.org/", wantErr: true},
+		{
+			// url.Parse only screens control bytes before the "#", so a CRLF in the
+			// fragment parses fine and would otherwise land in the Location header.
+			name:    "crlf in fragment",
+			rawURL:  "https://example.com/#\r\nSet-Cookie: pwned=1",
+			wantErr: true,
+		},
+		{name: "control character in path", rawURL: "https://example.com/a\x01b", wantErr: true},
+		{
+			// Length is a storage limit enforced by the create schema, not a safety rule:
+			// an over-long row that is already stored is still safe to redirect to.
+			name:   "over max length",
+			rawURL: "https://example.com/" + strings.Repeat("a", service.MaxOriginalURLLen),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := service.IsValidOriginalURL(tt.rawURL)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("IsValidOriginalURL(%q) error = %v, wantErr = %v", tt.rawURL, err, tt.wantErr)
+			}
+		})
+	}
+}
+
+// TestBase58AlphabetContents pins the alphabet itself. Everything else compares against it —
+// the ID generator indexes it, and TestRegisterPublishesShortIDConstraints builds the expected
+// request pattern from it — so a character added to or dropped from the constant would move
+// both sides of those checks together and pass.
+func TestBase58AlphabetContents(t *testing.T) {
+	t.Parallel()
+
+	// encodeBase58 divides by an unexported radix constant of 58 and indexes the
+	// alphabet with the remainder; a shorter alphabet panics at runtime, not here.
+	if len(service.Base58Alphabet) != 58 {
+		t.Fatalf("len(Base58Alphabet) = %d, want 58", len(service.Base58Alphabet))
+	}
+
+	for _, ch := range "0OIl" {
+		if strings.ContainsRune(service.Base58Alphabet, ch) {
+			t.Errorf("Base58Alphabet contains confusable character %q", ch)
+		}
+	}
+}
+
+// TestGeneratedIDsSatisfyPublishedIDConstraints ties the ID generator to the constraints the
+// {id} path params publish. Generate() maxes out at lowPartLen (6) padded characters plus a
+// 6-character suffix, which is exactly MaxShortURLIDLen — nothing else links the two. An ID
+// the generator can mint but the path schema rejects is a short URL that POST returns and
+// GET /{id} can never resolve.
+func TestGeneratedIDsSatisfyPublishedIDConstraints(t *testing.T) {
+	t.Parallel()
+
+	gen := service.NewDefaultFeistelIDGenerator()
+	base58 := regexp.MustCompile("^[" + service.Base58Alphabet + "]+$")
+
+	sequences := []uint64{
+		0,
+		1,
+		math.MaxUint32,     // last ID with no suffix
+		math.MaxUint32 + 1, // first ID with a suffix
+		math.MaxUint64,     // longest possible ID
+	}
+
+	for _, seq := range sequences {
+		id := gen.Generate(seq)
+
+		if len(id) > service.MaxShortURLIDLen {
+			t.Errorf(
+				"Generate(%d) = %q, length %d exceeds MaxShortURLIDLen %d",
+				seq, id, len(id), service.MaxShortURLIDLen,
+			)
+		}
+
+		if !base58.MatchString(id) {
+			t.Errorf("Generate(%d) = %q, want only Base58 characters", seq, id)
+		}
 	}
 }

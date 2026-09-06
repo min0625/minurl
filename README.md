@@ -80,8 +80,16 @@ Online viewer: [OpenAPI Docs](https://redocly.github.io/redoc/3.x/shorturl?url=h
 ### API Endpoints
 
 **Create a short URL**
-(`id` is optional. If omitted, the server auto-generates one.)
+(`id` is optional. Omit the key or send `null` to have the server auto-generate one;
+an empty string is rejected with `422 Unprocessable Entity`.)
 (`expire_time` is optional. If omitted or null, the URL is permanent.)
+(`original_url` must be an absolute `http`/`https` URL with a host, at most 8192 characters, and
+without embedded credentials. Anything else — `javascript:`, `data:`, `file:`, `ftp:`,
+`//example.com`, `https://user@example.com/` — returns `422 Unprocessable Entity`.
+The allowlist covers the URL scheme and embedded credentials only. It does not restrict
+which host a short URL may point at: private and loopback addresses, cloud metadata
+endpoints and internationalized domains are all accepted. MinURL never fetches the URL
+itself, so this is a redirect target, not a server-side request.)
 ```
 POST /api/v1/urls
 Content-Type: application/json
@@ -126,6 +134,22 @@ Location: https://example.com/very/long/url
 
 > Returns `404 Not Found` if the short URL does not exist or has expired.
 
+> **Upgrade note:** the redirect endpoint also refuses stored URLs that fail the rules above, so
+> short URLs created by earlier versions with a non-`http(s)` `original_url` now return
+> `404 Not Found` (`GET /api/v1/urls/{id}` still returns them, for auditing). List the affected
+> rows with:
+> ```sql
+> SELECT id, original_url FROM short_urls
+> WHERE (LOWER(original_url) NOT LIKE 'http://%' AND LOWER(original_url) NOT LIKE 'https://%')
+>    OR original_url LIKE '%@%';
+> ```
+> The first clause finds rejected schemes; the second surfaces embedded credentials and
+> over-matches (an `@` in a query string is fine). `LOWER()` matters on PostgreSQL and SQLite,
+> where `LIKE` is case-sensitive: the scheme is compared case-insensitively by the server
+> (`HTTP://example.com` is accepted), but the URL is stored exactly as submitted. URLs with no
+> host — `http://`, `http://:8080/` — are refused too and are not covered by either clause,
+> and neither are URLs carrying control characters.
+
 ## Health Check Endpoints
 
 MinURL exposes three health check endpoints for use with container orchestration and monitoring tools. These endpoints are **not** part of the OpenAPI spec — they are infrastructure endpoints, not business API.
@@ -166,7 +190,9 @@ Auto-generated short IDs are Base58 strings using the alphabet:
 - Longer IDs append an unpadded Base58 suffix derived from the upper 32 bits.
 - This preserves compact 6-char IDs for the first 2^32 entries while extending capacity safely beyond 2^32 entries (up to the uint64 limit).
 
-Custom `id` values are also validated against the same Base58 character rules and maximum length.
+Custom `id` values are validated against the same alphabet: 1–12 characters, case-sensitive, and
+anything else (including `0`, `O`, `I`, `l`) returns `422 Unprocessable Entity`. The same rule
+applies to the `{id}` path parameter, so a malformed ID is a `422`, not a `404`.
 
 ## HTTP Debug Requests
 

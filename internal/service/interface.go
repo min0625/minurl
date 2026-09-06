@@ -2,14 +2,16 @@
 
 package service
 
-import (
-	"context"
-
-	"github.com/go-playground/validator/v10"
-)
+import "context"
 
 // ShortURLServicer is the contract for short URL business logic operations.
-// Implementations must contain no HTTP or transport concerns.
+// Implementations must contain no HTTP or transport concerns: no status codes, no
+// headers, no request or response types.
+//
+// The request schema on ShortURL is the deliberate exception. The model is shared with
+// the handler rather than duplicated as a DTO, so it carries the huma tags and resolvers
+// that describe it on the wire; see AGENTS.md. That describes the model, not this
+// contract — the methods below stay transport-free.
 type ShortURLServicer interface {
 	// Create creates a new short URL and returns it.
 	// If entry.ID is provided, it will be used as the short URL identifier.
@@ -23,12 +25,3 @@ type ShortURLServicer interface {
 
 // Compile-time assertion: ShortURLService must satisfy ShortURLServicer.
 var _ ShortURLServicer = (*ShortURLService)(nil)
-
-// RegisterValidations registers service-level validation rules onto v.
-// Call this once during application startup so that validator tags such as
-// "shortid" reflect the same constraints enforced by the service layer.
-func RegisterValidations(v *validator.Validate) error {
-	return v.RegisterValidation("shortid", func(fl validator.FieldLevel) bool {
-		return IsValidShortURLID(fl.Field().String()) == nil
-	})
-}
