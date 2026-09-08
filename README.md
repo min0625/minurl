@@ -368,14 +368,14 @@ db-conn-max-idle-time: "10m"
 Version metadata can be injected at build time via `ldflags`:
 
 ```bash
-go run -ldflags "-X github.com/min0625/minurl/cmd/minurl.version=v1.0.0 -X github.com/min0625/minurl/cmd/minurl.commit=$(git rev-parse --short HEAD)" ./cmd/minurl version
+go run -ldflags "-X main.version=v1.0.0 -X main.commit=$(git rev-parse --short HEAD)" ./cmd/minurl version
 ```
 
 In CI release pipelines, you can pass tag/commit like this:
 
 ```bash
 mkdir -p bin
-go build -ldflags "-s -w -X github.com/min0625/minurl/cmd/minurl.version=${GIT_TAG} -X github.com/min0625/minurl/cmd/minurl.commit=${GIT_COMMIT}" -o bin/minurl ./cmd/minurl
+go build -ldflags "-s -w -X main.version=${GIT_TAG} -X main.commit=${GIT_COMMIT}" -o bin/minurl ./cmd/minurl
 ./bin/minurl version
 ```
 
@@ -392,6 +392,13 @@ make build
 make docker-build
 make docker-run
 ```
+
+By default:
+
+- Image name: `minurl`
+- Tag: current git tag with any leading `v` stripped (if an exact tag exists), else
+  the short commit SHA — tag `v1.2.3` builds `minurl:1.2.3`
+- The build injects version metadata into the binary via `LDFLAGS` in `Makefile`
 
 `make docker-run` uses persistent volume defaults:
 
@@ -552,25 +559,18 @@ go run ./cmd/minurl \
 Generate OpenAPI files directly from the app contract (no server startup required):
 
 ```bash
-go run ./cmd/minurl openapi
+go run ./cmd/minurl openapi          # writes to docs/openapi by default
+go run ./cmd/minurl openapi --out /tmp/spec
 ```
 
-This writes:
-
-- `docs/openapi/openapi.json`
-- `docs/openapi/openapi.yaml`
+Both commands write `openapi.json` and `openapi.yaml` into the output directory
+(`docs/openapi/` unless `--out` says otherwise).
 
 Or use Make targets:
 
 ```bash
 make openapi
 ```
-
-By default:
-
-- Image name: `minurl`
-- Tag: current git tag (if exact tag exists) or short commit SHA
-- Docker build injects metadata into binary with `LDFLAGS` in `Makefile`
 
 ## Contributing
 

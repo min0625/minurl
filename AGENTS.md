@@ -70,8 +70,8 @@ and `omitempty` is not deprecated, so there is no reason to churn it. A bare
 |-------|---------|-----------|
 | Entry | `cmd/minurl` | `main.go`, `server.go`, `service_factory.go`, `config.go` |
 | Handler | `internal/handler` | `short_url.go`, `health.go` |
-| Service | `internal/service` | `short_url.go`, `model.go`, `validation.go`, `id_generator.go` |
-| Store | `internal/store` | `sqlite.go` (SQLite), `postgres.go`, `mysql.go` |
+| Service | `internal/service` | `short_url.go`, `model.go`, `validation.go`, `id_generator.go`, `id_counter.go`, `interface.go`, `storage.go` |
+| Store | `internal/store` | `sqlite.go` (SQLite), `postgres.go`, `mysql.go`, `migrations.go`, `pinger.go` |
 | Test helpers | `internal/testhelpers` | In-memory fakes for unit tests |
 | HTTP server | `internal/httpserver` | HTTP server lifecycle |
 | Middleware | `internal/middleware` | Logging, recovery, decompression |
@@ -103,6 +103,9 @@ Quick reference:
 | `make gen` | regenerate OpenAPI docs and Kiota client |
 | `make ci` | check + gen + `git diff --exit-code` |
 | `make test` | race-enabled `go test ./...` |
+
+`make lint` only reports issues new since `NEW_FROM_REV` (default `HEAD`) — see
+[CONTRIBUTING.md — Make variables](CONTRIBUTING.md#make-variables) before concluding a clean run means clean code.
 
 Direct run:
 
@@ -136,6 +139,7 @@ SQLite, PostgreSQL, and MySQL use [golang-migrate/migrate v4](https://github.com
 - **Migration files**: `internal/store/migrations/sqlite/`, `internal/store/migrations/postgres/`, and `internal/store/migrations/mysql/`
 - **Naming**: `000001_<name>.up.sql` / `000001_<name>.down.sql`
 - **Embed**: `//go:embed` in each store file — no external files needed at runtime
+- **Shared helper**: `runMigrations()` in `internal/store/migrations.go` — every backend calls it
 - **Tracking**: golang-migrate creates a `schema_migrations` table in each database
 - **Drivers**: `github.com/golang-migrate/migrate/v4/database/sqlite` (modernc, no cgo) for SQLite; `github.com/golang-migrate/migrate/v4/database/postgres` for PostgreSQL; `github.com/golang-migrate/migrate/v4/database/mysql` for MySQL
 - **`m.Close()` is NOT called** after `Up()` — the database drivers wrap a caller-owned `*sql.DB`; calling Close() would close the shared connection

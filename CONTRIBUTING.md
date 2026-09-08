@@ -10,7 +10,7 @@ This document is the canonical reference for development workflow, coding conven
 - Docker (for integration tests and container builds)
 - [`golangci-lint`](https://golangci-lint.run/) — install via `mise install` or follow the official docs
 - [`prek`](https://prek.j178.dev/) — runs the git hooks and `make check`; install via `mise install`
-- [`kiota`](https://learn.microsoft.com/en-us/openapi/kiota/) CLI — required only when regenerating the Go client
+- [`kiota`](https://learn.microsoft.com/en-us/openapi/kiota/) CLI — required by `make gen`, `make kiota`, and `make ci`
 
 Install all tools at once with:
 
@@ -42,9 +42,10 @@ go run ./cmd/minurl
 
 | Target | Description |
 |--------|-------------|
-| `make fix` | `go mod tidy` + golangci-lint auto-fix, then `make lint` |
-| `make lint` | `golangci-lint config verify` + `golangci-lint run` |
-| `make test` | Race-enabled `go test ./...` |
+| `make fix` | `go mod tidy`, golangci-lint auto-fix, `go mod tidy` again, then `make lint` |
+| `make lint` | `golangci-lint config verify` + `golangci-lint run --new-from-rev=$(NEW_FROM_REV)` (aborts early if the rev is invalid) |
+| `make test` | `go test -race -failfast ./...`, with `INTEGRATION_TEST` passed through to the tests |
+| `make check-tidy` | `go mod tidy -diff` (fails when `go.mod`/`go.sum` are stale) |
 | `make check` | Every prek hook over all files (tidy diff + lint + test included) |
 | `make gen` | Regenerate OpenAPI docs **and** Kiota Go client |
 | `make openapi` | Regenerate OpenAPI docs only |
@@ -56,6 +57,21 @@ go run ./cmd/minurl
 
 `make check` runs every hook in `.pre-commit-config.yaml` over all tracked files — the same
 gate `git commit` runs, but repo-wide. Run it before every commit. CI (`make ci`) additionally verifies generated files are in sync.
+
+### Make variables
+
+| Variable | Default | Effect |
+|----------|---------|--------|
+| `NEW_FROM_REV` | `HEAD` | golangci-lint only reports issues **new since this revision**. The default reports uncommitted work; once committed, `make lint` goes quiet. |
+| `INTEGRATION_TEST` | `0` | `1` also runs the PostgreSQL/MySQL integration tests (needs Docker). |
+| `VERBOSE` | `0` | `1` adds `-v` to `go test` and `golangci-lint`. |
+
+They pass through `make check` to the nested hooks, so reproduce the CI gate locally with the
+same invocation CI uses:
+
+```bash
+make ci NEW_FROM_REV=origin/main INTEGRATION_TEST=1 VERBOSE=1
+```
 
 ## Coding Conventions
 
@@ -69,7 +85,8 @@ gate `git commit` runs, but repo-wide. Run it before every commit. CI (`make ci`
 
 - Add or update tests for every behavior change.
 - Prefer table-driven tests for handler and validation logic.
-- Always run `make test && make lint` before submitting.
+- Unit tests use the in-memory fakes in `internal/testhelpers` — no database required.
+- Always run `make check` before submitting — it runs lint and test plus the rest of the hooks.
 
 **PostgreSQL / MySQL integration tests** require Docker:
 
@@ -138,6 +155,10 @@ Format: `<type>/<short-description>` (lowercase kebab-case)
 | `refactor/` | Restructuring without behavior change |
 | `test/` | Adding or improving tests |
 | `ci/` | CI/CD pipeline changes |
+| `build/` | Build system or Dockerfile changes |
+| `perf/` | Performance improvements |
+| `style/` | Formatting or lint fixes (no logic change) |
+| `revert/` | Reverting a previous commit |
 
 ### Commit message format
 
@@ -157,10 +178,23 @@ docs: add MySQL deployment example
 
 ## Pull Request Process
 
-1. Create a feature branch from `main`.
+1. Create a feature branch from `main` — never commit directly to `main`.
 2. Make changes following the conventions above.
 3. Run `make check` and `make gen`.
 4. Ensure `git diff --exit-code` passes (same as CI checks).
-5. Open a PR with a clear summary, list of changes, and testing steps.
+5. Open a PR. The title follows the same Conventional Commits format as the commit
+   message; the body uses:
 
-For full PR creation steps (including MCP-based tooling), see [`.github/instructions/create-pull-request.instructions.md`](.github/instructions/create-pull-request.instructions.md).
+   ```markdown
+   ## Summary
+
+   ## Changes
+
+   -
+
+   ## How to Test
+
+   1.
+   ```
+6. Push follow-up commits to update the PR. If a rewrite is unavoidable, use
+   `git push --force-with-lease`, never `--force`.
