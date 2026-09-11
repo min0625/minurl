@@ -656,7 +656,7 @@ func TestMySQLShortURLStorageRejectsOversizedOriginalURL(t *testing.T) {
 
 	entry := service.ShortURL{
 		ID:          "m-long",
-		OriginalURL: "https://example.com/" + strings.Repeat("a", mysqlMaxOriginalURLBytes),
+		OriginalURL: service.OriginalURL("https://example.com/" + strings.Repeat("a", mysqlMaxOriginalURLBytes)),
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
 	}
 
@@ -692,7 +692,7 @@ func TestMySQLShortURLStorageRejectsOversizedOriginalURLWithoutStrictMode(t *tes
 
 	entry := service.ShortURL{
 		ID:          fmt.Sprintf("m-long-%d", time.Now().UnixNano()),
-		OriginalURL: "https://example.com/" + strings.Repeat("a", mysqlMaxOriginalURLBytes),
+		OriginalURL: service.OriginalURL("https://example.com/" + strings.Repeat("a", mysqlMaxOriginalURLBytes)),
 		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
 	}
 
