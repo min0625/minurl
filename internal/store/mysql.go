@@ -22,6 +22,16 @@ import (
 //go:embed migrations/mysql/*.sql
 var mysqlMigrations embed.FS
 
+// mysqlErrDataTooLong is MySQL error 1406 (ER_DATA_TOO_LONG): a value was longer than
+// the column it was written to.
+const mysqlErrDataTooLong = 1406
+
+// mysqlMaxOriginalURLBytes is the capacity of the TEXT original_url column.
+// TestMySQLOriginalURLColumnMatchesMaxBytes pins it to the column it is copied from,
+// so widening that column without updating this leaves a failing test rather than a
+// limit that silently rejects URLs the column can now hold.
+const mysqlMaxOriginalURLBytes = 65535
+
 // mysqlDBCloser wraps a shared sql.DB and closes it on Close.
 type mysqlDBCloser struct {
 	db *sql.DB
@@ -59,22 +69,24 @@ func NewMySQLBackends(
 }
 
 func openMySQLDB(dsn string, pool DBPoolConfig) (*sql.DB, error) {
-	driverDSN, err := parseMySQLDSN(dsn)
+	cfg, err := parseMySQLDSN(dsn)
 	if err != nil {
 		return nil, err
 	}
 
-	db, err := sql.Open("mysql", driverDSN)
+	connector, err := mysqldriver.NewConnector(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("open mysql database: %w", err)
 	}
+
+	db := sql.OpenDB(connector)
 
 	db.SetMaxOpenConns(pool.MaxOpenConns)
 	db.SetMaxIdleConns(pool.MaxIdleConns)
 	db.SetConnMaxLifetime(pool.ConnMaxLifetime)
 	db.SetConnMaxIdleTime(pool.ConnMaxIdleTime)
 
-	if err := migrateMySQL(driverDSN); err != nil {
+	if err := migrateMySQL(cfg); err != nil {
 		_ = db.Close()
 
 		return nil, fmt.Errorf("migrate mysql database: %w", err)
@@ -90,18 +102,16 @@ func openMySQLDB(dsn string, pool DBPoolConfig) (*sql.DB, error) {
 // with that flag set, run migrations, then close it. The main application pool
 // (opened in openMySQLDB) deliberately omits multiStatements to avoid the
 // security risks associated with that flag.
-func migrateMySQL(driverDSN string) error {
-	cfg, err := mysqldriver.ParseDSN(driverDSN)
-	if err != nil {
-		return fmt.Errorf("parse mysql dsn for migration: %w", err)
-	}
+func migrateMySQL(cfg *mysqldriver.Config) error {
+	migCfg := cfg.Clone()
+	migCfg.MultiStatements = true
 
-	cfg.MultiStatements = true
-
-	migDB, err := sql.Open("mysql", cfg.FormatDSN())
+	connector, err := mysqldriver.NewConnector(migCfg)
 	if err != nil {
 		return fmt.Errorf("open mysql migration connection: %w", err)
 	}
+
+	migDB := sql.OpenDB(connector)
 
 	defer migDB.Close() //nolint:errcheck // best-effort close of migration-only connection
 
@@ -118,19 +128,37 @@ func migrateMySQL(driverDSN string) error {
 	return runMigrations(sourceDriver, dbDriver, "mysql")
 }
 
-// parseMySQLDSN converts a mysql:// URL to the driver DSN accepted by
-// github.com/go-sql-driver/mysql.
+// parseMySQLDSN converts a mysql:// URL to a driver config for
+// github.com/go-sql-driver/mysql, which does not accept URLs itself.
 //
-// URL → driver DSN mapping:
+// mysql:// is MySQL's own URI-like connection string scheme, but this function implements
+// only its shape, not its attribute vocabulary: MySQL reserves the query string for
+// connection attributes (ssl-mode, connect-timeout, …) and forbids server variables there,
+// while here it is the reverse. README — MySQL DSN query parameters spells that out for
+// operators; do not "fix" a caller-supplied ssl-mode by making it work here without
+// updating both.
 //
-//	mysql://user:pass@localhost:3306/dbname         → user:pass@tcp(localhost:3306)/dbname?parseTime=true
-//	mysql://user:pass@localhost/dbname              → user:pass@tcp(localhost:3306)/dbname?parseTime=true
-//	mysql://user:pass@localhost:3306/dbname?tls=true → user:pass@tcp(localhost:3306)/dbname?tls=true&parseTime=true
+// URL → config mapping:
 //
-// parseTime and loc=UTC are always enforced.
-func parseMySQLDSN(dsn string) (string, error) {
+//	mysql://user:pass@localhost:3306/dbname          → tcp(localhost:3306)/dbname
+//	mysql://user:pass@localhost/dbname               → tcp(localhost:3306)/dbname, port defaulted
+//	mysql://user:pass@localhost:3306/dbname?tls=true → tcp(localhost:3306)/dbname, TLS on
+//
+// parseTime and loc=UTC are always enforced; a caller-supplied value for either is
+// dropped without error.
+//
+// The result is handed to mysqldriver.NewConnector rather than formatted back into a
+// DSN string. FormatDSN writes cfg.Params into the query string, and re-parsing that
+// string promotes any driver-level name among them — charset, interpolateParams,
+// multiStatements, allowCleartextPasswords, and every other name ParseDSN recognises
+// (all 24 of them in driver v1.10.0) — from a server variable back
+// into a driver flag. Keeping the config means an unrecognised param stays what it is
+// meant to be, a system variable sent as SET k = v, so a caller-supplied driver flag is
+// rejected by the server at connect time instead of silently changing how the pool talks
+// to MySQL.
+func parseMySQLDSN(dsn string) (*mysqldriver.Config, error) {
 	if !strings.HasPrefix(dsn, "mysql://") {
-		return "", fmt.Errorf("mysql dsn must start with mysql://: %q", dsn)
+		return nil, fmt.Errorf("mysql dsn must start with mysql://: %q", dsn)
 	}
 
 	// Replace scheme so url.Parse can handle it correctly.
@@ -138,7 +166,7 @@ func parseMySQLDSN(dsn string) (string, error) {
 
 	u, err := url.Parse(raw)
 	if err != nil {
-		return "", fmt.Errorf("parse mysql dsn %q: %w", dsn, err)
+		return nil, fmt.Errorf("parse mysql dsn %q: %w", dsn, err)
 	}
 
 	cfg := mysqldriver.NewConfig()
@@ -150,7 +178,7 @@ func parseMySQLDSN(dsn string) (string, error) {
 
 	host := u.Hostname()
 	if host == "" {
-		return "", fmt.Errorf("mysql dsn missing host: %q", dsn)
+		return nil, fmt.Errorf("mysql dsn missing host: %q", dsn)
 	}
 
 	port := u.Port()
@@ -163,14 +191,16 @@ func parseMySQLDSN(dsn string) (string, error) {
 
 	cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	if cfg.DBName == "" {
-		return "", fmt.Errorf("mysql dsn missing database name: %q", dsn)
+		return nil, fmt.Errorf("mysql dsn missing database name: %q", dsn)
 	}
 
 	cfg.ParseTime = true
 	cfg.Loc = time.UTC
 
 	// Forward any extra query parameters from the original URL.
-	// Known driver-level params are mapped to Config fields; the rest go into Params.
+	// tls is mapped to a Config field; the rest go into Params, which the driver sends
+	// as SET k = v on connect — an unknown name fails the connection rather than being
+	// silently dropped.
 	if u.RawQuery != "" {
 		q := u.Query()
 		extra := make(map[string]string, len(q))
@@ -195,7 +225,7 @@ func parseMySQLDSN(dsn string) (string, error) {
 		}
 	}
 
-	return cfg.FormatDSN(), nil
+	return cfg, nil
 }
 
 // MySQLShortURLStorage is a MySQL-backed short URL storage.
@@ -216,16 +246,61 @@ func (s *MySQLShortURLStorage) CreateIfAbsent(
 		expireTime = &t
 	}
 
+	// original_url is TEXT, so it holds 65535 bytes. The limit is checked here rather
+	// than left to the server: MySQL only raises ER_DATA_TOO_LONG in strict SQL mode, and
+	// a server without STRICT_TRANS_TABLES silently truncates the value and reports the
+	// row as inserted — the response would carry the full URL while the redirect served a
+	// truncated one. Widening the column is a separate migration; until then an oversized
+	// URL answers 4xx rather than 500.
+	if len(entry.OriginalURL) > mysqlMaxOriginalURLBytes {
+		return false, fmt.Errorf(
+			"create short url: %w: %d bytes exceeds the %d byte column limit",
+			service.ErrOriginalURLTooLong,
+			len(entry.OriginalURL),
+			mysqlMaxOriginalURLBytes,
+		)
+	}
+
+	// ON DUPLICATE KEY UPDATE id = id suppresses the duplicate-key error and nothing else,
+	// which is what INSERT IGNORE got wrong: IGNORE downgrades every error to a warning, so
+	// an original_url longer than TEXT was stored silently truncated while the response
+	// carried the full value, and any other insert failure surfaced as a bogus
+	// "id already exists".
+	//
+	// Unlike the ON CONFLICT (id) DO NOTHING used by postgres.go and sqlite.go, which is
+	// scoped to one index, ODKU fires on any unique key and MySQL offers no way to scope
+	// it. The two are equivalent only while id is the sole unique key on short_urls, which
+	// TestMySQLShortURLStorageHasNoSecondUniqueKey pins. A migration adding a second UNIQUE
+	// index would make a violation of it return created=false, and the service would answer
+	// 409 for a row that never conflicted on id; that migration must also switch this to a
+	// plain INSERT plus a check that error 1062 names PRIMARY.
+	//
+	// Affected rows: 1 when inserted, 0 when the row already existed (id = id changes nothing).
 	result, err := s.db.ExecContext(
 		ctx,
-		`INSERT IGNORE INTO short_urls (id, original_url, create_time, expire_time)
-		 VALUES (?, ?, ?, ?)`,
+		`INSERT INTO short_urls (id, original_url, create_time, expire_time)
+		 VALUES (?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE id = id`,
 		entry.ID,
 		entry.OriginalURL,
 		entry.CreateTime.UTC(),
 		expireTime,
 	)
 	if err != nil {
+		// 1406 means the value did not fit the column: a client input problem, not a
+		// server fault. original_url is pre-checked above, so this is the backstop for
+		// the other columns — an id longer than the VARCHAR(255) it is stored in, which
+		// the request schema caps at MaxShortURLIDLen but the store does not enforce.
+		//
+		// The sentinel still names original_url, so a 1406 on id is answered with the
+		// wrong message. Tolerated because the handler rejects an over-long id long
+		// before the store sees one: reaching this line with one means a caller went
+		// around the API. Give id its own sentinel if that validation ever moves.
+		mysqlErr, ok := errors.AsType[*mysqldriver.MySQLError](err)
+		if ok && mysqlErr.Number == mysqlErrDataTooLong {
+			return false, fmt.Errorf("create short url: %w: %w", service.ErrOriginalURLTooLong, err)
+		}
+
 		return false, fmt.Errorf("create short url: %w", err)
 	}
 

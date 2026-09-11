@@ -6,6 +6,7 @@ A short URL service project implemented in Go.
 
 - [Quick Start](#quick-start)
 - [Project Status](#project-status)
+- [Supported databases](#supported-databases)
 - [Database migrations](#database-migrations)
 - [API Documentation](#api-documentation)
   - [API Endpoints](#api-endpoints)
@@ -64,6 +65,57 @@ Core short URL API is implemented and running:
 - Both short URL records and `id counter` are persisted in the configured backend
 - Container build target binary: `minurl`
 
+## Supported databases
+
+| Backend | Minimum | Verified | Notes |
+|---------|---------|----------|-------|
+| SQLite | — | 3.53.0 | Embedded via [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) — no external server, and the version is pinned by `go.mod`. The schema uses UPSERT (`ON CONFLICT ... DO NOTHING`), which needs SQLite 3.24+; the embedded build is well past that. |
+| PostgreSQL | 9.5 | 11, 13, 17 | 9.5 is the floor for `ON CONFLICT ... DO NOTHING`. |
+| MySQL | **8.0** | 8.0, 8.4 | The `short_urls.id` column uses the `utf8mb4_0900_as_cs` collation so that IDs are case-sensitive. **MySQL 5.7 fails to start** with `Error 1273 (HY000): Unknown collation: 'utf8mb4_0900_as_cs'`. |
+| MariaDB | — | 11.4 | Not officially supported and not covered by CI, but 11.4 runs the full API correctly, including case-sensitive IDs — it accepts `utf8mb4_0900_as_cs` as an alias. Use at your own risk. |
+
+CI runs the integration suite against `postgres:17-alpine` and `mysql:8.4`; the other
+versions in the "Verified" column were checked by hand.
+
+### MySQL `original_url` length limit
+
+`original_url` is stored in a MySQL `TEXT` column, which holds 65,535 bytes. A longer URL
+is rejected with `413 Request Entity Too Large` before the insert, rather than being
+silently truncated — MySQL only raises an error for an over-length value when the server
+runs in strict SQL mode. SQLite and PostgreSQL have no such column limit, so the same
+request succeeds there.
+
+The request body itself is capped at 1 MiB on every backend, so that is the practical
+ceiling for a URL — past it the same `413` comes from the HTTP layer instead of the store.
+
+### MySQL DSN query parameters
+
+Query parameters in a `mysql://` DSN are sent to the server as session variables
+(`SET name = value`), so `?sql_mode=...` works as expected. Driver-level connection flags are
+**not** accepted — neither the dangerous ones (`multiStatements`, `interpolateParams`,
+`charset`, `allowCleartextPasswords`, …) nor the harmless ones (`timeout`, `readTimeout`,
+`maxAllowedPacket`, …): the server rejects them with `Unknown system variable` and the
+process refuses to start. Two parameters are handled by the service instead:
+
+- `tls` is a real connection setting and is mapped explicitly (see
+  [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration)).
+- `parseTime` and `loc` are **ignored without error**: times are always parsed as
+  `time.Time` in UTC, and a caller-supplied value would break that.
+
+This is not the attribute vocabulary of [MySQL's own URI-like connection strings](https://dev.mysql.com/doc/refman/8.0/en/connecting-using-uri-or-key-value-pairs.html),
+which reserve the query string for connection attributes (`ssl-mode`, `connect-timeout`,
+`compression`, …) and do not allow server variables there at all. MinURL borrows the shape
+of that URI, not its attributes: write `?tls=true`, not `?ssl-mode=REQUIRED` — the latter is
+sent as a session variable and fails the connection (a hyphenated name surfaces as a SQL
+syntax error rather than `Unknown system variable`).
+
+The rule above is MySQL-only. A `postgres://` DSN is handed to
+[pgx](https://github.com/jackc/pgx) untouched, so every libpq parameter (`sslmode`,
+`application_name`, `options`, …) takes effect and an unknown one fails the connection. A
+`sqlite3://` DSN's query string is appended to the SQLite URI, so driver parameters such as
+`_pragma=` and `mode=` take effect — including `?mode=memory`, which starts cleanly and then
+loses every short URL on restart.
+
 ## Database migrations
 
 SQLite, PostgreSQL, and MySQL use embedded `golang-migrate` migrations. New databases are migrated automatically on startup.
@@ -82,6 +134,9 @@ Online viewer: [OpenAPI Docs](https://redocly.github.io/redoc/3.x/shorturl?url=h
 **Create a short URL**
 (`id` is optional. If omitted, the server auto-generates one.)
 (`expire_time` is optional. If omitted or null, the URL is permanent.)
+(`original_url` has no length limit of its own; the request body is capped at 1 MiB. On MySQL
+the column is `TEXT`, so a URL over 65,535 bytes returns `413 Request Entity Too Large`;
+SQLite and PostgreSQL have no such column limit.)
 ```
 POST /api/v1/urls
 Content-Type: application/json

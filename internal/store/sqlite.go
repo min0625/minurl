@@ -150,9 +150,15 @@ func (s *SQLiteShortURLStorage) CreateIfAbsent(
 		expireTimeStr = &formatted
 	}
 
+	// ON CONFLICT (id) DO NOTHING suppresses the duplicate-id conflict and nothing else.
+	// OR IGNORE downgrades every constraint failure to a skipped row, which CreateIfAbsent
+	// reports as "already existed" and the service turns into a 409 id conflict.
+	// TestSQLiteShortURLStorageReportsNonIDConstraintFailures pins the difference.
 	result, err := s.db.ExecContext(
 		ctx,
-		`INSERT OR IGNORE INTO short_urls (id, original_url, create_time, expire_time) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO short_urls (id, original_url, create_time, expire_time)
+		 VALUES (?, ?, ?, ?)
+		 ON CONFLICT (id) DO NOTHING`,
 		entry.ID,
 		entry.OriginalURL,
 		entry.CreateTime.UTC().Format(time.RFC3339Nano),
