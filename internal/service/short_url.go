@@ -21,8 +21,8 @@ type ShortURLService struct {
 var ErrShortURLIDConflict = errors.New("short url id already exists")
 
 // ErrOriginalURLTooLong is returned when the storage backend cannot hold the original URL.
-// The API sets no length limit, but MySQL's original_url column is TEXT, so a URL over
-// 65535 bytes is rejected there and accepted on SQLite and PostgreSQL.
+// The API sets no length limit (see IsValidOriginalURL), but MySQL's original_url column is
+// TEXT, so a URL over 65535 bytes is rejected there and accepted on SQLite and PostgreSQL.
 var ErrOriginalURLTooLong = errors.New("original url is too long for storage")
 
 // NewShortURLServiceWithAllDependencies returns a new ShortURLService with custom storage,
