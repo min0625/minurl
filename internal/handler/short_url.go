@@ -174,36 +174,12 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 }
 
 // Register registers all short URL routes onto the given API with the provided service.
+//
+// svc may be nil when the API is built only to produce the OpenAPI document:
+// registration never calls it. Every handler dereferences it, so a router
+// registered with a nil service must not be served.
 func Register(api huma.API, svc service.ShortURLServicer) {
 	registerCreateShortURLRoute(api, svc)
 	registerGetShortURLRoute(api, svc)
 	registerRedirectRoute(api, svc)
-}
-
-// RegisterOpenAPI registers all short URL routes onto the given API for OpenAPI schema generation.
-// This variant does not require a service implementation and is suitable for documentation generation.
-func RegisterOpenAPI(api huma.API) {
-	huma.Register(
-		api,
-		createShortURLOperation,
-		func(_ context.Context, _ *createShortURLInput) (*shortURLOutput, error) {
-			return nil, huma.Error500InternalServerError("not implemented", nil)
-		},
-	)
-
-	huma.Register(
-		api,
-		getShortURLOperation,
-		func(_ context.Context, _ *getShortURLInput) (*shortURLOutput, error) {
-			return nil, huma.Error500InternalServerError("not implemented", nil)
-		},
-	)
-
-	huma.Register(
-		api,
-		redirectShortURLOperation,
-		func(_ context.Context, _ *redirectInput) (*redirectOutput, error) {
-			return nil, huma.Error500InternalServerError("not implemented", nil)
-		},
-	)
 }

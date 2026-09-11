@@ -2,8 +2,10 @@ package httpserver_test
 
 import (
 	"net"
+	"slices"
 	"testing"
 
+	"github.com/danielgtaylor/huma/v2"
 	"github.com/min0625/minurl/internal/httpserver"
 )
 
@@ -63,4 +65,41 @@ func (a mockAddr) Network() string {
 
 func (a mockAddr) String() string {
 	return a.value
+}
+
+// TestBuildOpenAPISpecMatchesRuntimeRoutes guards the reason both documents are
+// built by BuildAPI: the generated spec must describe exactly the operations the
+// runtime serves, and must not quietly become empty.
+func TestBuildOpenAPISpecMatchesRuntimeRoutes(t *testing.T) {
+	t.Parallel()
+
+	want := []string{"create-short-url", "get-short-url", "redirect-short-url"}
+
+	generated := operationIDs(httpserver.BuildOpenAPISpec("test"))
+	if !slices.Equal(generated, want) {
+		t.Fatalf("generated spec operations = %v, want %v", generated, want)
+	}
+
+	_, api := httpserver.BuildAPI(nil, "test")
+
+	if runtime := operationIDs(api.OpenAPI()); !slices.Equal(runtime, generated) {
+		t.Fatalf("runtime operations = %v, generated spec operations = %v", runtime, generated)
+	}
+}
+
+// operationIDs returns every operation ID in the document, sorted.
+func operationIDs(spec *huma.OpenAPI) []string {
+	var ids []string
+
+	for _, p := range spec.Paths {
+		for _, op := range []*huma.Operation{p.Get, p.Post, p.Put, p.Delete, p.Options, p.Head, p.Patch, p.Trace} {
+			if op != nil {
+				ids = append(ids, op.OperationID)
+			}
+		}
+	}
+
+	slices.Sort(ids)
+
+	return ids
 }
