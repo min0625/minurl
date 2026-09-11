@@ -2,7 +2,9 @@ package store //nolint:testpackage // White-box tests validate internal MySQL he
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -15,6 +17,30 @@ const (
 	mysqlUpperURL = "https://example.com/upper"
 )
 
+// mysqlDSNFields is the part of the driver config parseMySQLDSN is responsible for.
+// Comparing the whole *mysqldriver.Config would drag in the driver's own defaults.
+type mysqlDSNFields struct {
+	User   string
+	Passwd string
+	Addr   string
+	DBName string
+	TLS    string
+}
+
+func newMySQLDSNFields(cfg *mysqldriver.Config) mysqlDSNFields {
+	if cfg == nil {
+		return mysqlDSNFields{}
+	}
+
+	return mysqlDSNFields{
+		User:   cfg.User,
+		Passwd: cfg.Passwd,
+		Addr:   cfg.Addr,
+		DBName: cfg.DBName,
+		TLS:    cfg.TLSConfig,
+	}
+}
+
 func TestParseMySQLDSN(t *testing.T) {
 	t.Parallel()
 
@@ -22,6 +48,7 @@ func TestParseMySQLDSN(t *testing.T) {
 		name    string
 		dsn     string
 		wantErr bool
+		want    mysqlDSNFields
 	}{
 		{ //nolint:gosec // test credentials in DSN
 			name:    "non-mysql scheme is rejected",
@@ -41,18 +68,24 @@ func TestParseMySQLDSN(t *testing.T) {
 		{ //nolint:gosec // test credentials in DSN
 			name: "basic DSN without port",
 			dsn:  "mysql://user:pass@localhost/dbname",
+			want: mysqlDSNFields{User: "user", Passwd: "pass", Addr: "localhost:3306", DBName: "dbname"},
 		},
 		{ //nolint:gosec // test credentials in DSN
 			name: "basic DSN with port",
-			dsn:  "mysql://user:pass@localhost:3306/dbname",
+			dsn:  "mysql://user:pass@localhost:3307/dbname",
+			want: mysqlDSNFields{User: "user", Passwd: "pass", Addr: "localhost:3307", DBName: "dbname"},
 		},
 		{ //nolint:gosec // test credentials in DSN
 			name: "DSN with extra params",
 			dsn:  "mysql://user:pass@localhost:3306/dbname?tls=skip-verify",
+			want: mysqlDSNFields{
+				User: "user", Passwd: "pass", Addr: "localhost:3306", DBName: "dbname", TLS: "skip-verify",
+			},
 		},
 		{ //nolint:gosec // test credentials in DSN
 			name: "DSN with special chars in password",
 			dsn:  "mysql://user:p%40ss@localhost/dbname",
+			want: mysqlDSNFields{User: "user", Passwd: "p@ss", Addr: "localhost:3306", DBName: "dbname"},
 		},
 	}
 
@@ -73,8 +106,8 @@ func TestParseMySQLDSN(t *testing.T) {
 				t.Fatalf("parseMySQLDSN(%q) error = %v", tc.dsn, err)
 			}
 
-			if got == "" {
-				t.Fatalf("parseMySQLDSN(%q) = empty string", tc.dsn)
+			if fields := newMySQLDSNFields(got); fields != tc.want {
+				t.Fatalf("parseMySQLDSN(%q) = %+v, want %+v", tc.dsn, fields, tc.want)
 			}
 		})
 	}
@@ -83,15 +116,9 @@ func TestParseMySQLDSN(t *testing.T) {
 func TestParseMySQLDSNEnforcesParseTime(t *testing.T) {
 	t.Parallel()
 
-	got, err := parseMySQLDSN("mysql://user:pass@localhost/dbname")
+	cfg, err := parseMySQLDSN("mysql://user:pass@localhost/dbname")
 	if err != nil {
 		t.Fatalf("parseMySQLDSN() error = %v", err)
-	}
-
-	// Parse the driver DSN to verify that parseTime=true and loc=UTC are enforced.
-	cfg, err := mysqldriver.ParseDSN(got)
-	if err != nil {
-		t.Fatalf("mysqldriver.ParseDSN(%q) error = %v", got, err)
 	}
 
 	if !cfg.ParseTime {
@@ -174,6 +201,16 @@ func TestMySQLShortURLStorageCreateIfAbsentConflict(t *testing.T) {
 
 	if created {
 		t.Fatalf("CreateIfAbsent() = true, want false for duplicate ID")
+	}
+
+	// ON DUPLICATE KEY UPDATE must leave the stored row alone.
+	got, ok, err := storage.GetByID(context.Background(), id)
+	if err != nil || !ok {
+		t.Fatalf("GetByID() = %v, %v, %v, want found", got, ok, err)
+	}
+
+	if got.OriginalURL != entry.OriginalURL {
+		t.Fatalf("OriginalURL = %q, want %q: the duplicate overwrote the row", got.OriginalURL, entry.OriginalURL)
 	}
 }
 
@@ -452,5 +489,223 @@ func TestMySQLShortURLStorageCaseSensitiveIDs(t *testing.T) {
 			"lower and upper IDs resolved to same OriginalURL %q, want distinct rows",
 			gotLower.OriginalURL,
 		)
+	}
+}
+
+// TestParseMySQLDSNKeepsDriverFlagsOutOfConfig pins that a caller-supplied driver-level
+// flag never becomes a driver flag. parseMySQLDSN leaves unrecognised params in
+// cfg.Params, which the driver sends as SET k = v, so the server rejects the connection
+// (see TestNewMySQLBackendsRejectsDriverLevelFlagsInDSN). Formatting the config back into
+// a DSN string would instead promote every one of these names into the flag it shadows:
+// multiStatements allows stacked queries on the application pool, clientFoundRows makes
+// CreateIfAbsent report an existing id as newly created, allowAllFiles lets LOAD DATA
+// LOCAL INFILE read arbitrary files from this machine, interpolateParams switches every
+// query off server-side parameter binding, and allowCleartextPasswords sends the password
+// in the clear.
+func TestParseMySQLDSNKeepsDriverFlagsOutOfConfig(t *testing.T) {
+	t.Parallel()
+
+	flags := map[string]func(*mysqldriver.Config) bool{
+		"multiStatements":         func(c *mysqldriver.Config) bool { return c.MultiStatements },
+		"clientFoundRows":         func(c *mysqldriver.Config) bool { return c.ClientFoundRows },
+		"allowAllFiles":           func(c *mysqldriver.Config) bool { return c.AllowAllFiles },
+		"interpolateParams":       func(c *mysqldriver.Config) bool { return c.InterpolateParams },
+		"allowCleartextPasswords": func(c *mysqldriver.Config) bool { return c.AllowCleartextPasswords },
+		"allowOldPasswords":       func(c *mysqldriver.Config) bool { return c.AllowOldPasswords },
+		"columnsWithAlias":        func(c *mysqldriver.Config) bool { return c.ColumnsWithAlias },
+	}
+
+	for name, isSet := range flags {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			cfg, err := parseMySQLDSN("mysql://user:pass@localhost/dbname?" + name + "=true")
+			if err != nil {
+				t.Fatalf("parseMySQLDSN() error = %v", err)
+			}
+
+			if isSet(cfg) {
+				t.Fatalf("%s was promoted to a driver flag, want it left off", name)
+			}
+
+			if cfg.Params[name] != "true" {
+				t.Fatalf("cfg.Params[%q] = %q, want %q: it must stay a server variable so the "+
+					"server rejects it", name, cfg.Params[name], "true")
+			}
+		})
+	}
+}
+
+// TestNewMySQLBackendsRejectsDriverLevelFlagsInDSN is the end-to-end half of the check
+// above: a driver flag left in cfg.Params reaches the server as an unknown system
+// variable, so the pool refuses to open instead of quietly running with the flag on.
+func TestNewMySQLBackendsRejectsDriverLevelFlagsInDSN(t *testing.T) {
+	t.Parallel()
+	skipIfNoIntegration(t)
+
+	_, _, closer, err := NewMySQLBackends(testMySQLDSN+"?multiStatements=true", DBPoolConfig{})
+	if err == nil {
+		_ = closer.Close()
+
+		t.Fatal("NewMySQLBackends() error = nil, want the server to reject multiStatements")
+	}
+
+	if !strings.Contains(err.Error(), "Unknown system variable") {
+		t.Fatalf("NewMySQLBackends() error = %v, want an unknown system variable error", err)
+	}
+}
+
+// TestMySQLShortURLStorageHasNoSecondUniqueKey pins the invariant CreateIfAbsent's
+// ON DUPLICATE KEY UPDATE depends on. ODKU fires on any unique key, not just the primary
+// one, so a second UNIQUE index would make a violation of it return created=false and the
+// service would answer 409 for a row that never conflicted on id. Measured against MySQL
+// 8.4 with a second unique index in place: CreateIfAbsent returns (false, nil), while
+// SQLite's scoped ON CONFLICT (id) correctly returns the constraint error.
+func TestMySQLShortURLStorageHasNoSecondUniqueKey(t *testing.T) {
+	t.Parallel()
+	skipIfNoIntegration(t)
+
+	storage, _, closer, err := NewMySQLBackends(testMySQLDSN, DBPoolConfig{})
+	if err != nil {
+		t.Fatalf("NewMySQLBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close mysql backend: %v", closeErr)
+		}
+	}()
+
+	rows, err := storage.db.QueryContext(
+		context.Background(),
+		`SELECT DISTINCT index_name FROM information_schema.statistics
+		 WHERE table_schema = DATABASE() AND table_name = 'short_urls' AND non_unique = 0`,
+	)
+	if err != nil {
+		t.Fatalf("query unique indexes: %v", err)
+	}
+
+	defer rows.Close() //nolint:errcheck // best-effort close
+
+	var names []string
+
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatalf("scan index name: %v", err)
+		}
+
+		names = append(names, name)
+	}
+
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate unique indexes: %v", err)
+	}
+
+	if len(names) != 1 || names[0] != "PRIMARY" {
+		t.Fatalf("unique indexes on short_urls = %v, want only [PRIMARY]: ON DUPLICATE KEY "+
+			"UPDATE would report a violation of the new index as an id conflict", names)
+	}
+}
+
+// TestMySQLOriginalURLColumnMatchesMaxBytes pins mysqlMaxOriginalURLBytes to the column it
+// claims to describe. The constant is a hand-copied TEXT capacity, and nothing else ties the
+// two together: widening original_url to MEDIUMTEXT in a later migration would leave the
+// constant silently too strict, answering 413 for URLs the column can now hold.
+func TestMySQLOriginalURLColumnMatchesMaxBytes(t *testing.T) {
+	t.Parallel()
+	skipIfNoIntegration(t)
+
+	storage, _, closer, err := NewMySQLBackends(testMySQLDSN, DBPoolConfig{})
+	if err != nil {
+		t.Fatalf("NewMySQLBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close mysql backend: %v", closeErr)
+		}
+	}()
+
+	// character_octet_length, not character_maximum_length: the constant counts bytes.
+	var octetLength int64
+
+	if err := storage.db.QueryRowContext(
+		context.Background(),
+		`SELECT character_octet_length FROM information_schema.columns
+		 WHERE table_schema = DATABASE() AND table_name = 'short_urls'
+		   AND column_name = 'original_url'`,
+	).Scan(&octetLength); err != nil {
+		t.Fatalf("query original_url column length: %v", err)
+	}
+
+	if octetLength != mysqlMaxOriginalURLBytes {
+		t.Fatalf("original_url holds %d bytes but mysqlMaxOriginalURLBytes = %d: "+
+			"CreateIfAbsent rejects URLs the column can store", octetLength, mysqlMaxOriginalURLBytes)
+	}
+}
+
+// TestMySQLShortURLStorageRejectsOversizedOriginalURL pins that a URL longer than the
+// TEXT column is reported as service.ErrOriginalURLTooLong. The API sets no length limit,
+// so without it the request answers 500 instead of 413. No database is needed: the length
+// is checked before the insert.
+func TestMySQLShortURLStorageRejectsOversizedOriginalURL(t *testing.T) {
+	t.Parallel()
+
+	storage := &MySQLShortURLStorage{}
+
+	entry := service.ShortURL{
+		ID:          "m-long",
+		OriginalURL: "https://example.com/" + strings.Repeat("a", mysqlMaxOriginalURLBytes),
+		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	created, err := storage.CreateIfAbsent(context.Background(), entry)
+	if created {
+		t.Fatalf("CreateIfAbsent() = true, want false")
+	}
+
+	if !errors.Is(err, service.ErrOriginalURLTooLong) {
+		t.Fatalf("CreateIfAbsent() error = %v, want %v", err, service.ErrOriginalURLTooLong)
+	}
+}
+
+// TestMySQLShortURLStorageRejectsOversizedOriginalURLWithoutStrictMode is the end-to-end
+// half of the check above. MySQL only raises ER_DATA_TOO_LONG in strict SQL mode, so a
+// server configured without STRICT_TRANS_TABLES used to store the row truncated and
+// report it as created, leaving the response carrying a URL the redirect could not serve.
+func TestMySQLShortURLStorageRejectsOversizedOriginalURLWithoutStrictMode(t *testing.T) {
+	t.Parallel()
+	skipIfNoIntegration(t)
+
+	// sql_mode is not a driver flag, so it reaches the server as SET sql_mode = ''.
+	storage, _, closer, err := NewMySQLBackends(testMySQLDSN+"?sql_mode=%27%27", DBPoolConfig{})
+	if err != nil {
+		t.Fatalf("NewMySQLBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close mysql backend: %v", closeErr)
+		}
+	}()
+
+	entry := service.ShortURL{
+		ID:          fmt.Sprintf("m-long-%d", time.Now().UnixNano()),
+		OriginalURL: "https://example.com/" + strings.Repeat("a", mysqlMaxOriginalURLBytes),
+		CreateTime:  time.Now().UTC().Truncate(time.Microsecond),
+	}
+
+	created, err := storage.CreateIfAbsent(context.Background(), entry)
+	if created {
+		t.Fatalf("CreateIfAbsent() = true, want false")
+	}
+
+	if !errors.Is(err, service.ErrOriginalURLTooLong) {
+		t.Fatalf("CreateIfAbsent() error = %v, want %v", err, service.ErrOriginalURLTooLong)
+	}
+
+	if _, ok, err := storage.GetByID(context.Background(), entry.ID); err != nil || ok {
+		t.Fatalf("GetByID() found = %v, err = %v, want not found: a truncated row was stored", ok, err)
 	}
 }

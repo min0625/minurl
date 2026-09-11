@@ -5,6 +5,7 @@ package handler_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -306,5 +307,45 @@ func TestRegisterGetShortURLReturns404ForExpiredShortURL(t *testing.T) {
 
 	if resp.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNotFound)
+	}
+}
+
+// TestRegisterCreateShortURLReturns413WhenOriginalURLTooLong pins that a URL the storage
+// backend cannot hold is reported as a client error. The API sets no length limit, but
+// MySQL's original_url column is TEXT, so the request would otherwise answer 500.
+func TestRegisterCreateShortURLReturns413WhenOriginalURLTooLong(t *testing.T) {
+	t.Parallel()
+
+	r := chi.NewRouter()
+	api := humachi.New(r, huma.DefaultConfig("MinURL API", "0.1.0"))
+	// The store wraps the driver error, which names the table column and the MySQL error
+	// code. The handler must not pass it to huma, which would serialize it into the body.
+	storeErr := fmt.Errorf(
+		"create short url: %w: %w",
+		service.ErrOriginalURLTooLong,
+		errors.New("Error 1406 (22001): Data too long for column 'original_url' at row 1"),
+	)
+	store := testhelpers.NewStorage().WithCreateError(storeErr)
+	handler.Register(api, newHandlerTestService(t, store))
+
+	req := httptest.NewRequestWithContext(
+		context.Background(),
+		http.MethodPost,
+		"/api/v1/urls",
+		strings.NewReader(`{"original_url":"https://example.com/long"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp := httptest.NewRecorder()
+	r.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d (body %s)", resp.Code, http.StatusRequestEntityTooLarge, resp.Body.String())
+	}
+
+	for _, leak := range []string{"1406", "original_url", "Data too long", "row 1"} {
+		if strings.Contains(resp.Body.String(), leak) {
+			t.Fatalf("413 body leaks %q to the client: %s", leak, resp.Body.String())
+		}
 	}
 }

@@ -28,6 +28,18 @@ MinURL is a Go short URL service. The core API is fully implemented — it suppo
   - `deploy/kubernetes/` — Kubernetes manifest examples (`.example.yaml`; copy and customize before use)
 - HTTP listen port: `:8888` (default)
 - Storage backends: SQLite (`sqlite3://`), PostgreSQL (`postgres://`), and MySQL (`mysql://`), auto-detected from DSN scheme
+- Minimum database versions: PostgreSQL 9.5 (`ON CONFLICT`), MySQL **8.0** (the `utf8mb4_0900_as_cs`
+  collation on `short_urls.id` — 5.7 fails to start). SQLite is embedded via `modernc.org/sqlite`,
+  so its version is pinned by `go.mod`. See [README — Supported databases](README.md#supported-databases)
+- MySQL DSN query params are sent as server session variables (`SET k = v`), so every driver-level
+  flag — dangerous (`multiStatements`, `interpolateParams`, …) and harmless alike (`timeout`,
+  `charset`, `maxAllowedPacket`, …) — is rejected by the server at connect time. `tls` is mapped
+  explicitly and is the only driver setting a DSN can change; `parseTime` and `loc` are silently
+  ignored (times are always parsed as UTC). This is MinURL's own vocabulary, **not** MySQL's
+  official URI attributes (`ssl-mode`, `connect-timeout`, …) — see
+  [README — MySQL DSN query parameters](README.md#mysql-dsn-query-parameters)
+- `postgres://` and `sqlite3://` DSNs are **not** curated this way: the former goes to pgx
+  untouched, the latter's query string is appended to the SQLite URI
 - Log format: `text` (default) or `json`, controlled via `--log-format` / `MINURL_LOG_FORMAT`
 - OpenTelemetry: opt-in tracing via `--otel-enabled`; supports `stdout` and `otlp` exporters
 - Configuration precedence: CLI flags > env vars > config file > defaults
@@ -39,7 +51,7 @@ Defined in `internal/service/model.go`:
 | Field | Type | JSON key | Required | Notes |
 |-------|------|----------|----------|-------|
 | `ID` | `string` | `id` | No | Base58 ≤12 chars; auto-generated if omitted |
-| `OriginalURL` | `string` | `original_url` | **Yes** | Must be a valid URL |
+| `OriginalURL` | `string` | `original_url` | **Yes** | Must be a valid URL; no length limit in the API (MySQL stores it in a TEXT column, which caps the value at 65,535 bytes; over that, `CreateIfAbsent` returns `ErrOriginalURLTooLong` and the handler answers 413) |
 | `ExpireTime` | `*time.Time` | `expire_time` | No | RFC 3339 UTC; omit/null = permanent |
 | `CreateTime` | `time.Time` | `create_time` | No | readOnly — set by server |
 

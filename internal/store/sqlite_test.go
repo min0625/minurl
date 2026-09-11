@@ -301,6 +301,114 @@ func TestSQLiteShortURLStorageCaseSensitiveIDs(t *testing.T) {
 	}
 }
 
+// TestSQLiteShortURLStorageCreateIfAbsentConflict pins the duplicate-id path: a second
+// insert of the same id reports created=false with no error, and leaves the stored row
+// untouched.
+func TestSQLiteShortURLStorageCreateIfAbsentConflict(t *testing.T) {
+	t.Parallel()
+
+	storage, _, closer, err := NewSQLiteBackends("sqlite3:///" + t.TempDir() + "/conflict.sqlite3")
+	if err != nil {
+		t.Fatalf("NewSQLiteBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close sqlite backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+	entry := service.ShortURL{
+		ID:          "dup",
+		OriginalURL: sqliteLowerURL,
+		CreateTime:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	created, err := storage.CreateIfAbsent(ctx, entry)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent() error = %v", err)
+	}
+
+	if !created {
+		t.Fatalf("CreateIfAbsent() = false, want true for a new ID")
+	}
+
+	second := entry
+	second.OriginalURL = sqliteUpperURL
+
+	created, err = storage.CreateIfAbsent(ctx, second)
+	if err != nil {
+		t.Fatalf("CreateIfAbsent(duplicate) error = %v", err)
+	}
+
+	if created {
+		t.Fatalf("CreateIfAbsent(duplicate) = true, want false")
+	}
+
+	got, ok, err := storage.GetByID(ctx, entry.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetByID() = %v, %v, %v, want found", got, ok, err)
+	}
+
+	if got.OriginalURL != entry.OriginalURL {
+		t.Fatalf("OriginalURL = %q, want %q: the duplicate overwrote the row", got.OriginalURL, entry.OriginalURL)
+	}
+}
+
+// TestSQLiteShortURLStorageReportsNonIDConstraintFailures pins the reason CreateIfAbsent
+// uses ON CONFLICT (id) DO NOTHING instead of INSERT OR IGNORE. OR IGNORE downgrades every
+// constraint failure to a skipped row, so CreateIfAbsent would report it as created=false
+// and ShortURLService.Create would answer 409 "short URL ID already exists" for a row that
+// never conflicted on id. A second unique index stands in for any future constraint.
+func TestSQLiteShortURLStorageReportsNonIDConstraintFailures(t *testing.T) {
+	t.Parallel()
+
+	path := t.TempDir() + "/constraint.sqlite3"
+
+	storage, _, closer, err := NewSQLiteBackends("sqlite3:///" + path)
+	if err != nil {
+		t.Fatalf("NewSQLiteBackends() error = %v", err)
+	}
+
+	defer func() {
+		if closeErr := closer.Close(); closeErr != nil {
+			t.Fatalf("close sqlite backend: %v", closeErr)
+		}
+	}()
+
+	ctx := context.Background()
+
+	// Written through the storage handle: openSQLiteDB caps the pool at one connection to
+	// keep SQLite writes serialized, and a second pool on the same file can deadlock here.
+	if _, err := storage.db.ExecContext(ctx, "CREATE UNIQUE INDEX uq_url ON short_urls(original_url)"); err != nil {
+		t.Fatalf("create second unique index: %v", err)
+	}
+
+	first := service.ShortURL{
+		ID:          "first",
+		OriginalURL: sqliteLowerURL,
+		CreateTime:  time.Now().UTC().Truncate(time.Second),
+	}
+
+	if _, err := storage.CreateIfAbsent(ctx, first); err != nil {
+		t.Fatalf("CreateIfAbsent(first) error = %v", err)
+	}
+
+	second := first
+	second.ID = "second"
+
+	created, err := storage.CreateIfAbsent(ctx, second)
+	if err == nil {
+		t.Fatalf("CreateIfAbsent() = %v, nil; want an error: a non-id constraint failure must "+
+			"not be reported as an id conflict", created)
+	}
+
+	if created {
+		t.Fatalf("CreateIfAbsent() = true, want false")
+	}
+}
+
 func TestSQLiteShortURLStorageNilExpireTimeRoundTrip(t *testing.T) {
 	t.Parallel()
 

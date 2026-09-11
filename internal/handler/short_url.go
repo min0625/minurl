@@ -111,6 +111,15 @@ func registerCreateShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 					return nil, huma.Error409Conflict("short URL ID already exists", err)
 				}
 
+				// The API sets no length limit, but a storage backend may have one.
+				// err is not attached: huma serializes it into the response body, and
+				// the store wraps the driver error, which names the table column.
+				if errors.Is(err, service.ErrOriginalURLTooLong) {
+					return nil, huma.Error413RequestEntityTooLarge(
+						"original URL is too long for storage",
+					)
+				}
+
 				return nil, huma.Error500InternalServerError("failed to create short URL", err)
 			}
 
