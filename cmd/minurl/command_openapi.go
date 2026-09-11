@@ -43,9 +43,7 @@ func newOpenAPICommand() *cobra.Command {
 }
 
 func runOpenAPICommand(outDir string) (string, error) {
-	_, api := httpserver.BuildOpenAPIRouter(version)
-
-	spec := api.OpenAPI()
+	spec := httpserver.BuildOpenAPISpec(version)
 
 	if err := os.MkdirAll(outDir, openAPIDirPerm); err != nil {
 		return "", fmt.Errorf("create output directory %q: %w", outDir, err)

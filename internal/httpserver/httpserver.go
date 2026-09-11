@@ -26,26 +26,35 @@ func NewRouter() *chi.Mux {
 }
 
 // BuildAPI creates a chi router with all MinURL handlers registered and returns
-// the router together with the Huma API instance for use at runtime.
-func BuildAPI(svc service.ShortURLServicer, version string) (*chi.Mux, huma.API) {
+// the router together with the Huma API instance.
+//
+// This is the only place the API is assembled, so the document written by
+// BuildOpenAPISpec cannot drift from the routes and config the runtime serves.
+// servers is the single deliberate difference: the runtime passes none and stays
+// host-relative, while the generated document pins a URL.
+func BuildAPI(svc service.ShortURLServicer, version string, servers ...*huma.Server) (*chi.Mux, huma.API) {
 	r := NewRouter()
-	api := humachi.New(r, huma.DefaultConfig("MinURL API", version))
+
+	cfg := huma.DefaultConfig("MinURL API", version)
+	cfg.Servers = servers
+
+	api := humachi.New(r, cfg)
 
 	handler.Register(api, svc)
 
 	return r, api
 }
 
-// BuildOpenAPIRouter creates a chi router suitable for OpenAPI schema generation
-// without requiring a live service implementation.
-func BuildOpenAPIRouter(version string) (*chi.Mux, huma.API) {
-	r := NewRouter()
-	cfg := huma.DefaultConfig("MinURL API", version)
-	cfg.Servers = []*huma.Server{{URL: "http://localhost:8888"}}
-	api := humachi.New(r, cfg)
-	handler.RegisterOpenAPI(api)
+// BuildOpenAPISpec builds the OpenAPI document from the same routes and config
+// the runtime serves. The service is nil: registration reads only operation
+// metadata and handler signatures, and the router is discarded rather than
+// served, so no handler ever runs.
+func BuildOpenAPISpec(version string) *huma.OpenAPI {
+	// Pinned because huma derives the $schema example URLs from it at
+	// registration time, and it becomes the generated Kiota client's base URL.
+	_, api := BuildAPI(nil, version, &huma.Server{URL: "http://localhost:8888"})
 
-	return r, api
+	return api.OpenAPI()
 }
 
 // ListenLogValues derives a human-readable bound address and docs URL from a net.Addr.
