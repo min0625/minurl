@@ -132,9 +132,19 @@ Online viewer: [OpenAPI Docs](https://redocly.github.io/redoc/3.x/shorturl?url=h
 ### API Endpoints
 
 **Create a short URL**
-(`id` is optional. If omitted, the server auto-generates one.)
+(`id` is optional. Omitting the key, sending `null` and sending `""` all mean the same
+thing: the server auto-generates one.)
 (`expire_time` is optional. If omitted or null, the URL is permanent.)
-(`original_url` has no length limit of its own; the request body is capped at 1 MiB. On MySQL
+(`original_url` must be an absolute `http`/`https` URL with a host, without embedded
+credentials, and without whitespace, control or invisible formatting characters (`U+200B`,
+`U+202E`, `U+FEFF`, …) — all of those have to be percent-encoded, or they land verbatim in
+the `Location` header, where they hide or reorder what the target reads as. Anything else —
+`javascript:`, `data:`, `file:`, `ftp:`, `//example.com`, `https://user@example.com/` — returns
+`422 Unprocessable Entity`. The allowlist covers the URL scheme and embedded credentials
+only. It does not restrict which host a short URL may point at: private and loopback
+addresses, cloud metadata endpoints and internationalized domains are all accepted. MinURL
+never fetches the URL itself, so this is a redirect target, not a server-side request.
+`original_url` has no length limit of its own; the request body is capped at 1 MiB. On MySQL
 the column is `TEXT`, so a URL over 65,535 bytes returns `413 Request Entity Too Large`;
 SQLite and PostgreSQL have no such column limit.)
 ```
@@ -181,6 +191,10 @@ Location: https://example.com/very/long/url
 
 > Returns `404 Not Found` if the short URL does not exist or has expired.
 
+> The redirect endpoint applies the same `original_url` rules to stored data, so a short URL
+> whose target does not satisfy them returns `404 Not Found`. `GET /api/v1/urls/{id}` still
+> returns it, so the row can be found and fixed.
+
 ## Health Check Endpoints
 
 MinURL exposes three health check endpoints for use with container orchestration and monitoring tools. These endpoints are **not** part of the OpenAPI spec — they are infrastructure endpoints, not business API.
@@ -221,7 +235,9 @@ Auto-generated short IDs are Base58 strings using the alphabet:
 - Longer IDs append an unpadded Base58 suffix derived from the upper 32 bits.
 - This preserves compact 6-char IDs for the first 2^32 entries while extending capacity safely beyond 2^32 entries (up to the uint64 limit).
 
-Custom `id` values are also validated against the same Base58 character rules and maximum length.
+Custom `id` values are validated against the same alphabet: up to 12 characters, case-sensitive, and
+anything else (including `0`, `O`, `I`, `l`) returns `422 Unprocessable Entity`. The same rule
+applies to the `{id}` path parameter, so a malformed ID is a `422`, not a `404`.
 
 ## HTTP Debug Requests
 
