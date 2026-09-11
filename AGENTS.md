@@ -50,8 +50,8 @@ Defined in `internal/service/model.go`:
 
 | Field | Type | JSON key | Required | Notes |
 |-------|------|----------|----------|-------|
-| `ID` | `string` | `id` | No | Base58 ≤12 chars; auto-generated if omitted |
-| `OriginalURL` | `string` | `original_url` | **Yes** | Must be a valid URL; no length limit in the API (MySQL stores it in a TEXT column, which caps the value at 65,535 bytes; over that, `CreateIfAbsent` returns `ErrOriginalURLTooLong` and the handler answers 413) |
+| `ID` | `string` | `id` | No | Base58 ≤12 chars, case-sensitive; auto-generated when omitted, `null` or `""` |
+| `OriginalURL` | `OriginalURL` | `original_url` | **Yes** | Absolute `http`/`https` URL with a host, no userinfo, no whitespace or control characters; no length limit in the API (MySQL stores it in a TEXT column, which caps the value at 65,535 bytes; over that, `CreateIfAbsent` returns `ErrOriginalURLTooLong` and the handler answers 413) |
 | `ExpireTime` | `*time.Time` | `expire_time` | No | RFC 3339 UTC; omit/null = permanent |
 | `CreateTime` | `time.Time` | `create_time` | No | readOnly — set by server |
 
@@ -69,10 +69,46 @@ in terms of the encoded JSON rather than the Go value, so its meaning shifts for
 bools, numbers, pointers and interfaces. `omitzero` is defined on the Go value
 and behaves identically in v1 and v2.
 
-**`validate` tags — keep `omitempty`.** This is go-playground/validator's own
-tag vocabulary, unrelated to `encoding/json`. Its `omitzero` is equivalent here
-and `omitempty` is not deprecated, so there is no reason to churn it. A bare
-`validate:"omitempty"` with no rule after it does nothing — drop the tag instead.
+### Request validation
+
+**Validation lives in the request schema, not in a second validator.** huma checks the
+schema against the parsed JSON *before* it unmarshals into the struct, so it can tell an
+absent key from a zero value, its errors carry `location` and `value`, and the rules reach
+the generated OpenAPI. A struct-level validator sees none of that.
+
+**A rule that belongs to a field belongs to its type.** `service.OriginalURL` is the
+worked example: `huma.SchemaProvider` gives it `minLength`, and `huma.ResolverWithPath`
+gives it the scheme/host/userinfo/whitespace/control-character checks JSON Schema cannot express.
+huma calls the resolver for every field of that type and supplies the error location
+itself — no hand-written `"body.original_url"` to go stale.
+
+Two things such a resolver must respect: a value-typed field reaches it as the zero value
+when the key is absent, so return early on empty rather than inventing an error for a
+field nobody sent (a pointer field is skipped instead); and it runs on request input only,
+which is why the redirect handler calls `IsValidOriginalURL` itself for stored rows.
+
+`OriginalURL` has **no length limit, deliberately**. `minLength` is load-bearing though:
+`required:"true"` only asserts the key is present, and the resolver returns nil for the
+empty string, so dropping `minLength` lets an empty `original_url` through.
+
+**An optional field's schema must accept the Go zero value.** `ShortURL.ID` uses `*`
+rather than `+` in its pattern: `Create` already treats an empty ID as "generate one", and
+a Go client without `omitzero` serializes an unset string as `""`, so `+` would 422 a
+request that means the same as an omitted one. The `{id}` path param keeps `+` — an empty
+path segment never reaches the pattern, because huma rejects it first with "required path
+parameter is missing".
+
+`ShortURL.ID` also carries `nullable:"true"`. huma accepts `null` for any non-required
+property whatever its schema says, so without the tag the published document would claim
+`type: "string"` while the server took `{"id": null}` — a spec-validating gateway would
+reject a request the README documents as valid. `expire_time` already sets the precedent.
+
+That difference is why `ShortURL.ID` stays on tags instead of becoming a named type like
+`OriginalURL`: one `Schema()` returns one schema, but the body needs `*` and the path
+needs `+`. Only those two declarations remain — the get and redirect operations share one
+`shortURLIDInput`, because their parameter is identical. `TestRegisterPublishesShortIDConstraints`
+pins the body property and both published path params to `Base58Alphabet` and
+`MaxShortURLIDLen`.
 
 **Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
 
