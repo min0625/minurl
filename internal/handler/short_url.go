@@ -1,4 +1,4 @@
-// Copyright 2024 The MinURL Authors
+// Copyright 2026 The MinURL Authors
 
 // Package handler registers HTTP route handlers for the MinURL service.
 package handler

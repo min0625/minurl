@@ -1,4 +1,6 @@
-// Copyright 2024 The MinURL Authors
+// Copyright 2026 The MinURL Authors
+
+// Command minurl runs the MinURL short URL service.
 package main
 
 import (

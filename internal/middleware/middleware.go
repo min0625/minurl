@@ -1,4 +1,4 @@
-// Copyright 2024 The MinURL Authors
+// Copyright 2026 The MinURL Authors
 
 // Package middleware provides reusable HTTP middleware for the MinURL service.
 package middleware

@@ -1,4 +1,4 @@
-// Copyright 2024 The MinURL Authors
+// Copyright 2026 The MinURL Authors
 
 // Package httpserver provides helpers for building the MinURL HTTP server and router.
 package httpserver
