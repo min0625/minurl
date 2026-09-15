@@ -1,4 +1,4 @@
-// Copyright 2024 The MinURL Authors
+// Copyright 2026 The MinURL Authors
 
 // Package telemetry provides OpenTelemetry initialization and HTTP handler wrapping.
 package telemetry

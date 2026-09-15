@@ -1,4 +1,7 @@
-// Copyright 2024 The MinURL Authors
+// Copyright 2026 The MinURL Authors
+
+// Command minurl-client-example shows how to call the MinURL API with the
+// generated Kiota client.
 package main
 
 import (

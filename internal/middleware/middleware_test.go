@@ -1,3 +1,5 @@
+// Copyright 2026 The MinURL Authors
+
 package middleware_test
 
 import (

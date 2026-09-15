@@ -1,3 +1,5 @@
+// Copyright 2026 The MinURL Authors
+
 package telemetry_test
 
 import (

@@ -1,3 +1,5 @@
+// Copyright 2026 The MinURL Authors
+
 package store //nolint:testpackage // White-box tests validate internal MySQL helpers.
 
 import (
