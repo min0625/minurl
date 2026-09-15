@@ -6,53 +6,38 @@ package handler
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/go-playground/validator/v10"
 	"github.com/min0625/minurl/internal/service"
 )
 
-var requestValidator = newRequestValidator()
-
 const shortURLTag = "ShortURL"
 
-func newRequestValidator() *validator.Validate {
-	v := validator.New()
-	if err := service.RegisterValidations(v); err != nil {
-		panic(err)
-	}
-
-	return v
-}
-
-func validateRequest(req any, msg string) []error {
-	if err := requestValidator.Struct(req); err != nil {
-		return []error{huma.Error400BadRequest(msg, err)}
-	}
-
-	return nil
+// Request validation only holds if huma validates the value encoding/json then stores.
+// huma validates the exact key, but encoding/json matches keys case-insensitively and
+// keeps the last match, so {"id":"abc","ID":"bad*id"} would store the unvalidated "ID".
+// Strict casing rejects every key the schema does not declare verbatim. Set in init so
+// it is in place before any API is built, and never written while requests run.
+func init() {
+	huma.ValidateStrictCasing = true //nolint:reassign // huma exposes this setting only as a package var.
 }
 
 type createShortURLInput struct {
-	Body service.ShortURL `validate:"required"`
-}
-
-var _ huma.Resolver = (*createShortURLInput)(nil)
-
-func (in *createShortURLInput) Resolve(huma.Context) []error {
-	return validateRequest(in, "invalid create short URL request")
+	Body service.ShortURL
 }
 
 type shortURLOutput struct {
 	Body service.ShortURL
 }
 
-type getShortURLInput struct {
-	ID string `doc:"Short URL identifier" path:"id" validate:"required,shortid"`
+// shortURLIDInput is the input for every operation addressed by an {id} path param.
+// The get and redirect operations take the same parameter under the same rules, so they
+// share one declaration; huma keys operations off huma.Operation, not the input type.
+type shortURLIDInput struct {
+	ID string `path:"id" doc:"Short URL identifier" maxLength:"12" pattern:"^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$" patternDescription:"Base58 characters"`
 }
-
-var _ huma.Resolver = (*getShortURLInput)(nil)
 
 var createShortURLOperation = huma.Operation{
 	OperationID: "create-short-url",
@@ -68,20 +53,6 @@ var getShortURLOperation = huma.Operation{
 	Path:        "/api/v1/urls/{id}",
 	Summary:     "Get a short URL by ID",
 	Tags:        []string{shortURLTag},
-}
-
-func (in *getShortURLInput) Resolve(huma.Context) []error {
-	return validateRequest(in, "invalid get short URL request")
-}
-
-type redirectInput struct {
-	ID string `doc:"Short URL identifier" path:"id" validate:"required,shortid"`
-}
-
-var _ huma.Resolver = (*redirectInput)(nil)
-
-func (in *redirectInput) Resolve(huma.Context) []error {
-	return validateRequest(in, "invalid short URL ID")
 }
 
 type redirectOutput struct {
@@ -134,7 +105,7 @@ func registerGetShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 	huma.Register(
 		api,
 		getShortURLOperation,
-		func(ctx context.Context, input *getShortURLInput) (*shortURLOutput, error) {
+		func(ctx context.Context, input *shortURLIDInput) (*shortURLOutput, error) {
 			entry, ok, err := svc.Get(ctx, input.ID)
 			if err != nil {
 				return nil, huma.Error500InternalServerError("failed to get short URL", err)
@@ -155,7 +126,7 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 	huma.Register(
 		api,
 		redirectShortURLOperation,
-		func(ctx context.Context, input *redirectInput) (*redirectOutput, error) {
+		func(ctx context.Context, input *shortURLIDInput) (*redirectOutput, error) {
 			entry, ok, err := svc.Get(ctx, input.ID)
 			if err != nil {
 				return nil, huma.Error500InternalServerError("failed to get short URL", err)
@@ -165,9 +136,22 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 				return nil, huma.Error404NotFound("short URL not found")
 			}
 
+			// Entries created before the scheme allowlist existed may hold a
+			// javascript:/data:/file: URL, so refuse to hand one back as a Location.
+			if err := service.IsValidOriginalURL(string(entry.OriginalURL)); err != nil {
+				slog.WarnContext(
+					ctx,
+					"stored original URL is not a valid http(s) URL",
+					"id", input.ID,
+					"error", err,
+				)
+
+				return nil, huma.Error404NotFound("short URL not found")
+			}
+
 			return &redirectOutput{
 				Status:   http.StatusFound,
-				Location: entry.OriginalURL,
+				Location: string(entry.OriginalURL),
 			}, nil
 		},
 	)
