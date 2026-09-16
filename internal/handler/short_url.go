@@ -10,6 +10,7 @@ import (
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/min0625/minurl/internal/middleware"
 	"github.com/min0625/minurl/internal/service"
 )
 
@@ -91,12 +92,29 @@ func registerCreateShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 					)
 				}
 
-				return nil, huma.Error500InternalServerError("failed to create short URL", err)
+				return nil, internalServerError(ctx, "failed to create short URL", err)
 			}
 
 			return &shortURLOutput{Body: *entry}, nil
 		},
 	)
+}
+
+// internalServerError logs err and returns a 500 carrying msg alone. err is never attached:
+// huma serializes an attached error into the response body, and the store wraps driver
+// errors that name tables and columns. The log line, with the request's attributes, is the
+// only record of the failure. A client that went away is not a server fault, so
+// context.Canceled is logged at WARN; the response is still a 500 in the access log.
+func internalServerError(ctx context.Context, msg string, err error) error {
+	level := slog.LevelError
+	if errors.Is(err, context.Canceled) {
+		level = slog.LevelWarn
+	}
+
+	slog.With(middleware.AttrsToAny(middleware.LoggerAttrsFromContext(ctx))...).
+		Log(ctx, level, msg, "error", err)
+
+	return huma.Error500InternalServerError(msg)
 }
 
 // registerGetShortURLRoute registers the get short URL endpoint on the given API.
@@ -108,7 +126,7 @@ func registerGetShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 		func(ctx context.Context, input *shortURLIDInput) (*shortURLOutput, error) {
 			entry, ok, err := svc.Get(ctx, input.ID)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("failed to get short URL", err)
+				return nil, internalServerError(ctx, "failed to get short URL", err)
 			}
 
 			if !ok {
@@ -129,7 +147,7 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 		func(ctx context.Context, input *shortURLIDInput) (*redirectOutput, error) {
 			entry, ok, err := svc.Get(ctx, input.ID)
 			if err != nil {
-				return nil, huma.Error500InternalServerError("failed to get short URL", err)
+				return nil, internalServerError(ctx, "failed to get short URL", err)
 			}
 
 			if !ok {

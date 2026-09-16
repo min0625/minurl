@@ -3,10 +3,13 @@
 package handler_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -17,6 +20,7 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
+	"github.com/min0625/minurl/internal/middleware"
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/testhelpers"
 )
@@ -148,22 +152,104 @@ func pathParamSchema(t *testing.T, spec *huma.OpenAPI, path string) *huma.Schema
 	return nil
 }
 
-func TestRegisterGetShortURLReturns500WhenStorageFails(t *testing.T) {
-	t.Parallel()
+// TestRegisterReturns500WithoutTheStorageError pins that a 500 never carries the store
+// error, which can name tables and columns, and that the log line replacing it carries the
+// request's attributes. It swaps the global slog default and so must not call t.Parallel:
+// Go holds every parallel test until the sequential ones have finished.
+func TestRegisterReturns500WithoutTheStorageError(t *testing.T) {
+	var logs bytes.Buffer
 
-	r, _ := newTestAPI(t, testhelpers.NewStorage().WithGetError(errors.New("storage unavailable")))
+	origLogger, origWriter, origFlags := slog.Default(), log.Writer(), log.Flags()
 
-	req := httptest.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		"/api/v1/urls/abc123",
-		nil,
-	)
-	resp := httptest.NewRecorder()
-	r.ServeHTTP(resp, req)
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	// SetDefault also points the log package at the new handler, and restoring a default
+	// logger does not undo that.
+	t.Cleanup(func() {
+		slog.SetDefault(origLogger)
+		log.SetOutput(origWriter)
+		log.SetFlags(origFlags)
+	})
 
-	if resp.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
+	storeErr := errors.New(`relation "short_urls" does not exist`)
+	createBody := `{"original_url":"https://example.com/"}`
+
+	tests := []struct {
+		name      string
+		store     *testhelpers.Storage
+		method    string
+		target    string
+		body      string
+		wantLevel string
+	}{
+		{
+			name: "create", store: testhelpers.NewStorage().WithCreateError(storeErr),
+			method: http.MethodPost, target: "/api/v1/urls", body: createBody,
+			wantLevel: "ERROR",
+		},
+		{
+			name: "get", store: testhelpers.NewStorage().WithGetError(storeErr),
+			method: http.MethodGet, target: "/api/v1/urls/abc123",
+			wantLevel: "ERROR",
+		},
+		{
+			name: "redirect", store: testhelpers.NewStorage().WithGetError(storeErr),
+			method: http.MethodGet, target: "/api/v1/urls/abc123:redirect",
+			wantLevel: "ERROR",
+		},
+		{
+			// The client went away: not a server fault, so logged below ERROR.
+			name:   "client went away",
+			store:  testhelpers.NewStorage().WithGetError(fmt.Errorf("%w: %w", storeErr, context.Canceled)),
+			method: http.MethodGet, target: "/api/v1/urls/abc123",
+			wantLevel: "WARN",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs.Reset()
+
+			r, _ := newTestAPI(t, tt.store)
+
+			ctx := middleware.WithLoggerAttrs(context.Background(), []slog.Attr{slog.String("request_id", "req-1")})
+			req := httptest.NewRequestWithContext(ctx, tt.method, tt.target, strings.NewReader(tt.body))
+			req.Header.Set("Content-Type", "application/json")
+
+			resp := httptest.NewRecorder()
+			r.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusInternalServerError {
+				t.Fatalf(
+					"status = %d, want %d (body %s)",
+					resp.Code,
+					http.StatusInternalServerError,
+					resp.Body.String(),
+				)
+			}
+
+			if strings.Contains(resp.Body.String(), "short_urls") {
+				t.Fatalf("500 body leaks the storage error: %s", resp.Body.String())
+			}
+
+			var record struct {
+				Level     string `json:"level"`
+				Error     string `json:"error"`
+				RequestID string `json:"request_id"`
+			}
+
+			if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
+				t.Fatalf("decode log %q: %v", logs.String(), err)
+			}
+
+			if record.Level != tt.wantLevel || record.RequestID != "req-1" ||
+				!strings.Contains(record.Error, "short_urls") {
+				t.Fatalf(
+					"log = %s, want level %s with the storage error and request_id req-1",
+					logs.String(),
+					tt.wantLevel,
+				)
+			}
+		})
 	}
 }
 
@@ -462,25 +548,6 @@ func TestRegisterRedirectRouteRejectsInvalidID(t *testing.T) {
 
 	if resp.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d", resp.Code, http.StatusUnprocessableEntity)
-	}
-}
-
-func TestRegisterRedirectRouteReturns500WhenStorageFails(t *testing.T) {
-	t.Parallel()
-
-	r, _ := newTestAPI(t, testhelpers.NewStorage().WithGetError(errors.New("storage unavailable")))
-
-	req := httptest.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		"/api/v1/urls/abc123:redirect",
-		nil,
-	)
-	resp := httptest.NewRecorder()
-	r.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusInternalServerError {
-		t.Fatalf("status = %d, want %d", resp.Code, http.StatusInternalServerError)
 	}
 }
 
