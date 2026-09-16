@@ -19,6 +19,26 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// unwrapper is what http.ResponseController and huma.SetReadDeadline follow through a
+// wrapping ResponseWriter to reach the connection. net/http declares it unexported as
+// rwUnwrapper and huma inlines it, so it is restated here for the compile-time checks.
+//
+//   - Convention: https://pkg.go.dev/net/http#NewResponseController
+//   - net/http: https://github.com/golang/go/blob/go1.26.8/src/net/http/responsecontroller.go#L42-L44
+//   - huma: https://github.com/danielgtaylor/huma/blob/v2.37.3/huma.go#L60-L71
+type unwrapper interface {
+	Unwrap() http.ResponseWriter
+}
+
+// readDeadlineSetter is checked before unwrapper by the same callers, so the outermost
+// wrapper that implements it decides where a read deadline goes.
+//
+//   - net/http: https://github.com/golang/go/blob/go1.26.8/src/net/http/responsecontroller.go#L85-L97
+//   - huma: https://github.com/danielgtaylor/huma/blob/v2.37.3/huma.go#L60-L71
+type readDeadlineSetter interface {
+	SetReadDeadline(deadline time.Time) error
+}
+
 // ResponseWriter wraps http.ResponseWriter to track response status code and bytes written.
 type ResponseWriter struct {
 	http.ResponseWriter
@@ -26,6 +46,11 @@ type ResponseWriter struct {
 	StatusCode   int
 	BytesWritten int
 }
+
+var (
+	_ http.Flusher = (*ResponseWriter)(nil)
+	_ unwrapper    = (*ResponseWriter)(nil)
+)
 
 // WriteHeader records the status code and delegates to the underlying ResponseWriter.
 func (w *ResponseWriter) WriteHeader(statusCode int) {
@@ -51,6 +76,14 @@ func (w *ResponseWriter) Flush() {
 	if f, ok := w.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// Unwrap implements [unwrapper], so http.ResponseController and huma.SetReadDeadline
+// reach the connection through AccessLog and PanicRecovery. Without it the body read
+// timeout huma sets never fires:
+// https://github.com/danielgtaylor/huma/blob/v2.37.3/huma.go#L908-L914
+func (w *ResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // RequestLogger injects per-request log attributes (method, path, remote addr, trace IDs)
@@ -177,8 +210,41 @@ func RequestDecompress(next http.Handler) http.Handler {
 		r2.Header.Del("Content-Encoding")
 		r2.Header.Del("Content-Length")
 
-		next.ServeHTTP(w, r2)
+		next.ServeHTTP(readBodyWriter{w}, r2)
 	})
+}
+
+// readBodyWriter is handed downstream once RequestDecompress has read the whole body.
+// When a body reaches EOF, net/http starts a background read on the connection, and a
+// read deadline set after that cancels the request context when it fires. huma sets one
+// for every operation with a body, so a gzip request still in its handler when the body
+// read timeout passed failed with context.Canceled. Nothing is left to read, so the
+// deadline is dropped.
+//
+//   - EOF starts the background read: https://github.com/golang/go/blob/go1.26.8/src/net/http/server.go#L2053-L2057
+//   - which clears the deadline first: https://github.com/golang/go/blob/go1.26.8/src/net/http/server.go#L687-L699
+//   - a timeout on it cancels the context: https://github.com/golang/go/blob/go1.26.8/src/net/http/server.go#L729-L733
+//     and https://github.com/golang/go/blob/go1.26.8/src/net/http/server.go#L769-L777
+//   - huma sets the deadline: https://github.com/danielgtaylor/huma/blob/v2.37.3/huma.go#L908-L914
+type readBodyWriter struct {
+	http.ResponseWriter
+}
+
+var (
+	_ readDeadlineSetter = readBodyWriter{}
+	_ unwrapper          = readBodyWriter{}
+)
+
+// SetReadDeadline implements [readDeadlineSetter] and ignores the deadline: the body has
+// already been read. Callers check it before Unwrap, so the deadline stops here.
+func (readBodyWriter) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+// Unwrap implements [unwrapper], so the other http.ResponseController methods still reach
+// the connection.
+func (w readBodyWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 // PanicRecovery catches panics in downstream handlers, logs them, and returns 500.
