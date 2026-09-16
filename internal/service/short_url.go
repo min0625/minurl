@@ -17,6 +17,11 @@ type ShortURLService struct {
 	idGen   IDGenerator
 }
 
+// ErrShortURLNotFound means no short URL is served under an ID: Get returns it when the ID
+// never existed or has expired. A storage failure never wraps it, so the handler keeps
+// answering 500 rather than 404 when the database is the problem.
+var ErrShortURLNotFound = errors.New("short url not found")
+
 // ErrShortURLIDConflict is returned when a provided short URL ID already exists.
 var ErrShortURLIDConflict = errors.New("short url id already exists")
 
@@ -104,22 +109,16 @@ func (s *ShortURLService) Create(
 }
 
 // Get retrieves a short URL by ID.
-// Returns (nil, false, nil) when the ID is not found or the URL has expired.
-func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, bool, error) {
+// Returns ErrShortURLNotFound when the ID is not found or the URL has expired.
+func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, error) {
 	entry, ok, err := s.store.GetByID(ctx, id)
 	if err != nil {
-		return nil, false, fmt.Errorf("get short url from store: %w", err)
+		return nil, fmt.Errorf("get short url from store: %w", err)
 	}
 
-	if !ok {
-		return nil, false, nil
+	if !ok || (entry.ExpireTime != nil && time.Now().After(*entry.ExpireTime)) {
+		return nil, ErrShortURLNotFound
 	}
 
-	if entry.ExpireTime != nil && time.Now().After(*entry.ExpireTime) {
-		return nil, false, nil
-	}
-
-	result := entry
-
-	return &result, true, nil
+	return &entry, nil
 }
