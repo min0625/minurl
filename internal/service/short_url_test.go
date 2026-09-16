@@ -38,13 +38,9 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 		t.Fatal("Create() returned zero CreateTime")
 	}
 
-	got, ok, err := svc.Get(context.Background(), entry.ID)
+	got, err := svc.Get(context.Background(), entry.ID)
 	if err != nil {
 		t.Fatalf("Get(%q) error = %v", entry.ID, err)
-	}
-
-	if !ok {
-		t.Fatalf("Get(%q) returned ok = false", entry.ID)
 	}
 
 	if got.OriginalURL != "https://example.org/path" {
@@ -60,10 +56,10 @@ func TestShortURLServiceCreateAndGet(t *testing.T) {
 		t.Fatalf("Get(%q) id = %q, want %q", entry.ID, got.ID, entry.ID)
 	}
 
-	if _, ok, err := svc.Get(context.Background(), "missing"); err != nil {
-		t.Fatalf("Get(missing) error = %v", err)
-	} else if ok {
-		t.Fatal("Get(missing) returned ok = true, want false")
+	if got, err := svc.Get(context.Background(), "missing"); !errors.Is(err, service.ErrShortURLNotFound) {
+		t.Fatalf("Get(missing) error = %v, want %v", err, service.ErrShortURLNotFound)
+	} else if got != nil {
+		t.Fatalf("Get(missing) = %+v, want nil", got)
 	}
 }
 
@@ -115,24 +111,16 @@ func TestShortURLServiceGetReturnsCopy(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	got, ok, err := svc.Get(context.Background(), entry.ID)
+	got, err := svc.Get(context.Background(), entry.ID)
 	if err != nil {
 		t.Fatalf("Get(%q) error = %v", entry.ID, err)
 	}
 
-	if !ok {
-		t.Fatalf("Get(%q) returned ok = false", entry.ID)
-	}
-
 	got.OriginalURL = "https://example.org/mutated"
 
-	gotAgain, ok, err := svc.Get(context.Background(), entry.ID)
+	gotAgain, err := svc.Get(context.Background(), entry.ID)
 	if err != nil {
 		t.Fatalf("Get(%q) second read error = %v", entry.ID, err)
-	}
-
-	if !ok {
-		t.Fatalf("Get(%q) second read returned ok = false", entry.ID)
 	}
 
 	if gotAgain.OriginalURL != "https://example.org/original" {
@@ -230,17 +218,19 @@ func TestShortURLServiceGetReturnsErrorWhenStorageFails(t *testing.T) {
 		t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
 	}
 
-	_, ok, err := svc.Get(context.Background(), "any")
-	if err == nil {
-		t.Fatal("Get() error = nil, want non-nil")
-	}
-
+	got, err := svc.Get(context.Background(), "any")
 	if !errors.Is(err, expectedErr) {
 		t.Fatalf("Get() error = %v, want wrapped %v", err, expectedErr)
 	}
 
-	if ok {
-		t.Fatal("Get() ok = true, want false")
+	// A storage failure must not read as "not found", or the handler would answer 404
+	// instead of 500.
+	if errors.Is(err, service.ErrShortURLNotFound) {
+		t.Fatalf("Get() error = %v, must not wrap %v", err, service.ErrShortURLNotFound)
+	}
+
+	if got != nil {
+		t.Fatalf("Get() = %+v, want nil", got)
 	}
 }
 
@@ -384,13 +374,9 @@ func TestShortURLServiceGetReturnsNotFoundWhenExpired(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	got, ok, err := svc.Get(context.Background(), entry.ID)
-	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-
-	if ok {
-		t.Fatalf("Get() ok = true for expired URL, want false")
+	got, err := svc.Get(context.Background(), entry.ID)
+	if !errors.Is(err, service.ErrShortURLNotFound) {
+		t.Fatalf("Get() error = %v for expired URL, want %v", err, service.ErrShortURLNotFound)
 	}
 
 	if got != nil {
@@ -416,13 +402,9 @@ func TestShortURLServiceGetReturnsFutureExpireURL(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	got, ok, err := svc.Get(context.Background(), entry.ID)
+	got, err := svc.Get(context.Background(), entry.ID)
 	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-
-	if !ok {
-		t.Fatalf("Get() ok = false for non-expired URL, want true")
+		t.Fatalf("Get() error = %v for non-expired URL", err)
 	}
 
 	if got.OriginalURL != "https://example.org/future" {
@@ -447,13 +429,9 @@ func TestShortURLServiceGetNilExpireTimeIsPermanent(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 
-	got, ok, err := svc.Get(context.Background(), entry.ID)
+	got, err := svc.Get(context.Background(), entry.ID)
 	if err != nil {
-		t.Fatalf("Get() error = %v", err)
-	}
-
-	if !ok {
-		t.Fatalf("Get() ok = false for permanent URL, want true")
+		t.Fatalf("Get() error = %v for permanent URL", err)
 	}
 
 	if got.ExpireTime != nil {

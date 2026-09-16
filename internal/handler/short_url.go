@@ -124,13 +124,13 @@ func registerGetShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 		api,
 		getShortURLOperation,
 		func(ctx context.Context, input *shortURLIDInput) (*shortURLOutput, error) {
-			entry, ok, err := svc.Get(ctx, input.ID)
+			entry, err := svc.Get(ctx, input.ID)
 			if err != nil {
-				return nil, internalServerError(ctx, "failed to get short URL", err)
-			}
+				if errors.Is(err, service.ErrShortURLNotFound) {
+					return nil, huma.Error404NotFound("short URL not found")
+				}
 
-			if !ok {
-				return nil, huma.Error404NotFound("short URL not found")
+				return nil, internalServerError(ctx, "failed to get short URL", err)
 			}
 
 			return &shortURLOutput{Body: *entry}, nil
@@ -145,13 +145,13 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 		api,
 		redirectShortURLOperation,
 		func(ctx context.Context, input *shortURLIDInput) (*redirectOutput, error) {
-			entry, ok, err := svc.Get(ctx, input.ID)
+			entry, err := svc.Get(ctx, input.ID)
 			if err != nil {
-				return nil, internalServerError(ctx, "failed to get short URL", err)
-			}
+				if errors.Is(err, service.ErrShortURLNotFound) {
+					return nil, huma.Error404NotFound("short URL not found")
+				}
 
-			if !ok {
-				return nil, huma.Error404NotFound("short URL not found")
+				return nil, internalServerError(ctx, "failed to get short URL", err)
 			}
 
 			// Entries created before the scheme allowlist existed may hold a

@@ -292,13 +292,9 @@ func TestNewShortURLServiceFromConfigSQLitePersists(t *testing.T) {
 		}
 	}()
 
-	got, found, err := svc2.Get(t.Context(), entry.ID)
+	got, err := svc2.Get(t.Context(), entry.ID)
 	if err != nil {
 		t.Fatalf("Get() error = %v", err)
-	}
-
-	if !found {
-		t.Fatalf("Get() found = false, want true")
 	}
 
 	if got.OriginalURL != "https://example.com" {
