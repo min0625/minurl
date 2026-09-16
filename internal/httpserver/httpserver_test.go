@@ -3,13 +3,126 @@
 package httpserver_test
 
 import (
+	"bufio"
+	"bytes"
+	"compress/gzip"
+	"context"
+	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/min0625/minurl/internal/httpserver"
+	"github.com/min0625/minurl/internal/service"
+	"github.com/min0625/minurl/internal/testhelpers"
 )
+
+// TestBuildAPIAnswersAStalledBodyWith408 pins huma's body read timeout. huma sets its
+// deadline through the ResponseWriter, so it fires only if every middleware wrapper
+// unwraps to the connection, which a ResponseRecorder cannot show.
+func TestBuildAPIAnswersAStalledBodyWith408(t *testing.T) {
+	t.Parallel()
+
+	svc, err := service.NewShortURLServiceWithAllDependencies(testhelpers.NewStorage(), testhelpers.NewCounter(), nil)
+	if err != nil {
+		t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
+	}
+
+	r, _ := httpserver.BuildAPI(svc, "test")
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", srv.Listener.Addr().String())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+
+	defer func() { _ = conn.Close() }()
+
+	// Promise 100 bytes, send a few, then stall.
+	_, err = io.WriteString(conn, "POST /api/v1/urls HTTP/1.1\r\nHost: minurl\r\n"+
+		"Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"original_url\"")
+	if err != nil {
+		t.Fatalf("write request: %v", err)
+	}
+
+	// huma's body read timeout is 5s; no response by 10s means the deadline never fired.
+	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		t.Fatalf("set read deadline: %v", err)
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusRequestTimeout {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusRequestTimeout)
+	}
+}
+
+// TestBuildAPIServesAGzipRequestPastTheBodyReadTimeout guards the other side of that
+// deadline. RequestDecompress reads a gzip body to EOF before huma sets it, and a read
+// deadline set after EOF cancels the request context when it fires, so a handler still
+// running at 5s failed with a 500.
+func TestBuildAPIServesAGzipRequestPastTheBodyReadTimeout(t *testing.T) {
+	t.Parallel()
+
+	r, _ := httpserver.BuildAPI(slowServicer{}, "test")
+	srv := httptest.NewServer(r)
+	t.Cleanup(srv.Close)
+
+	var body bytes.Buffer
+
+	zw := gzip.NewWriter(&body)
+	if _, err := io.WriteString(zw, `{"original_url":"https://example.com"}`); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+
+	if err := zw.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, srv.URL+"/api/v1/urls", &body)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+
+	resp, err := srv.Client().Do(req)
+	if err != nil {
+		t.Fatalf("do request: %v", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+	}
+}
+
+// slowServicer creates a short URL only after huma's 5s body read timeout has passed,
+// and fails like a store would if the request context is cancelled first.
+type slowServicer struct {
+	service.ShortURLServicer
+}
+
+func (slowServicer) Create(ctx context.Context, entry service.ShortURL) (*service.ShortURL, error) {
+	select {
+	case <-time.After(6 * time.Second):
+		return &entry, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 
 func TestListenLogValues(t *testing.T) {
 	t.Parallel()
