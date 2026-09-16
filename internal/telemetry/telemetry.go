@@ -103,7 +103,7 @@ func Init(ctx context.Context, cfg Config) (func(context.Context) error, error) 
 // When disabled the original handler is returned unchanged.
 func WrapHTTPHandler(h http.Handler, cfg Config) http.Handler {
 	if cfg.Enabled {
-		return otelhttp.NewHandler(
+		otelHandler := otelhttp.NewHandler(
 			h,
 			"http.server",
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
@@ -119,6 +119,20 @@ func WrapHTTPHandler(h http.Handler, cfg Config) http.Handler {
 				return fmt.Sprintf("%s %s", r.Method, path)
 			}),
 		)
+
+		// otelhttp replaces r.Body with its own wrapper on the request it is given. On the
+		// server's own request, net/http then no longer recognizes the body it created, so
+		// after a failed body read (a timeout, broken chunked encoding) it keeps the connection
+		// open and parses the unread rest of the body as the next request. A shallow copy keeps
+		// the replacement off the server's request. otelhttp v0.69.0 restores the body itself
+		// once the handler returns.
+		//
+		//   - otelhttp v0.68.0: https://github.com/open-telemetry/opentelemetry-go-contrib/blob/instrumentation/net/http/otelhttp/v0.68.0/instrumentation/net/http/otelhttp/handler.go#L139-L142
+		//   - net/http: https://github.com/golang/go/blob/go1.26.8/src/net/http/server.go#L1385-L1427
+		//   - otelhttp v0.69.0: https://github.com/open-telemetry/opentelemetry-go-contrib/blob/instrumentation/net/http/otelhttp/v0.69.0/instrumentation/net/http/otelhttp/handler.go#L141-L149
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			otelHandler.ServeHTTP(w, r.WithContext(r.Context()))
+		})
 	}
 
 	return h
