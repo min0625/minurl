@@ -21,49 +21,77 @@ import (
 	"github.com/min0625/minurl/internal/testhelpers"
 )
 
-// TestBuildAPIAnswersAStalledBodyWith408 pins huma's body read timeout. huma sets its
+// TestBuildAPIAnswersAStalledBody pins huma's body read timeout. huma sets its
 // deadline through the ResponseWriter, so it fires only if every middleware wrapper
-// unwraps to the connection, which a ResponseRecorder cannot show.
-func TestBuildAPIAnswersAStalledBodyWith408(t *testing.T) {
+// unwraps to the connection, which a ResponseRecorder cannot show. RequestDecompress reads
+// a gzip body before huma would set the deadline, so it sets the deadline itself.
+func TestBuildAPIAnswersAStalledBody(t *testing.T) {
 	t.Parallel()
 
-	svc, err := service.NewShortURLServiceWithAllDependencies(testhelpers.NewStorage(), testhelpers.NewCounter(), nil)
-	if err != nil {
-		t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
+	tests := []struct {
+		name    string
+		headers string
+		partial string
+		want    int
+	}{
+		{name: "uncompressed", partial: `{"original_url"`, want: http.StatusRequestTimeout},
+		// The first bytes of a gzip header: the gzip reader waits for the rest.
+		{
+			name: "gzip", headers: "Content-Encoding: gzip\r\n", partial: "\x1f\x8b\x08",
+			want: http.StatusRequestTimeout,
+		},
+		// Refused unread, but net/http reads what is left of a small body before answering.
+		{
+			name: "unsupported encoding", headers: "Content-Encoding: br\r\n", partial: "abc",
+			want: http.StatusUnsupportedMediaType,
+		},
 	}
 
-	r, _ := httpserver.BuildAPI(svc, "test")
-	srv := httptest.NewServer(r)
-	t.Cleanup(srv.Close)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", srv.Listener.Addr().String())
-	if err != nil {
-		t.Fatalf("dial: %v", err)
-	}
+			svc, err := service.NewShortURLServiceWithAllDependencies(
+				testhelpers.NewStorage(), testhelpers.NewCounter(), nil,
+			)
+			if err != nil {
+				t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
+			}
 
-	defer func() { _ = conn.Close() }()
+			r, _ := httpserver.BuildAPI(svc, "test")
+			srv := httptest.NewServer(r)
+			t.Cleanup(srv.Close)
 
-	// Promise 100 bytes, send a few, then stall.
-	_, err = io.WriteString(conn, "POST /api/v1/urls HTTP/1.1\r\nHost: minurl\r\n"+
-		"Content-Type: application/json\r\nContent-Length: 100\r\n\r\n{\"original_url\"")
-	if err != nil {
-		t.Fatalf("write request: %v", err)
-	}
+			conn, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", srv.Listener.Addr().String())
+			if err != nil {
+				t.Fatalf("dial: %v", err)
+			}
 
-	// huma's body read timeout is 5s; no response by 10s means the deadline never fired.
-	if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-		t.Fatalf("set read deadline: %v", err)
-	}
+			defer func() { _ = conn.Close() }()
 
-	resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
-	if err != nil {
-		t.Fatalf("read response: %v", err)
-	}
+			// Promise 100 bytes, send a few, then stall.
+			_, err = io.WriteString(conn, "POST /api/v1/urls HTTP/1.1\r\nHost: minurl\r\n"+
+				"Content-Type: application/json\r\n"+tt.headers+"Content-Length: 100\r\n\r\n"+tt.partial)
+			if err != nil {
+				t.Fatalf("write request: %v", err)
+			}
 
-	defer func() { _ = resp.Body.Close() }()
+			// The body read timeout is 5s; no response by 10s means the deadline never fired.
+			if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+				t.Fatalf("set read deadline: %v", err)
+			}
 
-	if resp.StatusCode != http.StatusRequestTimeout {
-		t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusRequestTimeout)
+			resp, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			if err != nil {
+				t.Fatalf("read response: %v", err)
+			}
+
+			defer func() { _ = resp.Body.Close() }()
+
+			if resp.StatusCode != tt.want {
+				t.Fatalf("status = %d, want %d", resp.StatusCode, tt.want)
+			}
+		})
 	}
 }
 
