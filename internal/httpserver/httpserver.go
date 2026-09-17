@@ -20,7 +20,6 @@ func NewRouter() *chi.Mux {
 	r.Use(middleware.PanicRecovery)
 	r.Use(middleware.RequestLogger)
 	r.Use(middleware.AccessLog)
-	r.Use(middleware.RequestDecompress)
 
 	return r
 }
@@ -39,6 +38,8 @@ func BuildAPI(svc service.ShortURLServicer, version string, servers ...*huma.Ser
 	cfg.Servers = servers
 
 	api := humachi.New(r, cfg)
+	// Before Register: huma captures the API's middlewares when an operation is registered.
+	api.UseMiddleware(middleware.RequestDecompress(api))
 
 	handler.Register(api, svc)
 
