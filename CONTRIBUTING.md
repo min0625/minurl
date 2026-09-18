@@ -80,6 +80,10 @@ make ci NEW_FROM_REV=origin/main INTEGRATION_TEST=1 VERBOSE=1
 - Return actionable errors with context.
 - Keep public APIs minimal until requirements are clear.
 - Do not introduce unrelated refactors in a PR.
+- Register every HTTP operation through `register(api, operation{…}, handler)` in
+  `internal/handler/short_url.go`, never `huma.Register` directly, and have handlers return
+  service errors as they are. `operation.errs` is what the OpenAPI document publishes, so a status
+  set anywhere else goes undocumented. See [AGENTS.md — Error responses](AGENTS.md#error-responses).
 
 ## Testing
 

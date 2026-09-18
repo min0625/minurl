@@ -28,6 +28,9 @@ func NewV1UrlsUrlsItemRequestBuilder(rawUrl string, requestAdapter i2ae4187f7dae
 }
 // Get get a short URL by ID
 // returns a ShortURLable when successful
+// returns a ErrorModel error when the service returns a 404 status code
+// returns a ErrorModel error when the service returns a 422 status code
+// returns a ErrorModel error when the service returns a 500 status code
 // returns a ErrorModel error when the service returns a 4XX or 5XX status code
 func (m *V1UrlsUrlsItemRequestBuilder) Get(ctx context.Context, requestConfiguration *i2ae4187f7daee263371cb1c977df639813ab50ffa529013b7437480d1ec0158f.RequestConfiguration[i2ae4187f7daee263371cb1c977df639813ab50ffa529013b7437480d1ec0158f.DefaultQueryParameters])(i97a0fca0ab49fc79fadcb9f8017dd01211a08c206afccfc7b1445f7828710d80.ShortURLable, error) {
     requestInfo, err := m.ToGetRequestInformation(ctx, requestConfiguration);
@@ -35,6 +38,9 @@ func (m *V1UrlsUrlsItemRequestBuilder) Get(ctx context.Context, requestConfigura
         return nil, err
     }
     errorMapping := i2ae4187f7daee263371cb1c977df639813ab50ffa529013b7437480d1ec0158f.ErrorMappings {
+        "404": i97a0fca0ab49fc79fadcb9f8017dd01211a08c206afccfc7b1445f7828710d80.CreateErrorModelFromDiscriminatorValue,
+        "422": i97a0fca0ab49fc79fadcb9f8017dd01211a08c206afccfc7b1445f7828710d80.CreateErrorModelFromDiscriminatorValue,
+        "500": i97a0fca0ab49fc79fadcb9f8017dd01211a08c206afccfc7b1445f7828710d80.CreateErrorModelFromDiscriminatorValue,
         "XXX": i97a0fca0ab49fc79fadcb9f8017dd01211a08c206afccfc7b1445f7828710d80.CreateErrorModelFromDiscriminatorValue,
     }
     res, err := m.BaseRequestBuilder.RequestAdapter.Send(ctx, requestInfo, i97a0fca0ab49fc79fadcb9f8017dd01211a08c206afccfc7b1445f7828710d80.CreateShortURLFromDiscriminatorValue, errorMapping)

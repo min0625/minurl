@@ -6,8 +6,11 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/min0625/minurl/internal/middleware"
@@ -40,59 +43,214 @@ type shortURLIDInput struct {
 	ID string `path:"id" doc:"Short URL identifier" maxLength:"12" pattern:"^[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]+$" patternDescription:"Base58 characters"`
 }
 
-var createShortURLOperation = huma.Operation{
-	OperationID: "create-short-url",
-	Method:      http.MethodPost,
-	Path:        "/api/v1/urls",
-	Summary:     "Create a short URL",
-	Tags:        []string{shortURLTag},
-}
-
-var getShortURLOperation = huma.Operation{
-	OperationID: "get-short-url",
-	Method:      http.MethodGet,
-	Path:        "/api/v1/urls/{id}",
-	Summary:     "Get a short URL by ID",
-	Tags:        []string{shortURLTag},
-}
-
+// redirectOutput has no Status field: the 302 comes from the operation's defaultStatus, the
+// status the document publishes.
 type redirectOutput struct {
-	Status   int
 	Location string `doc:"URL to redirect to" header:"Location"`
 }
 
-var redirectShortURLOperation = huma.Operation{
-	OperationID:   "redirect-short-url",
-	Method:        http.MethodGet,
-	Path:          "/api/v1/urls/{id}:redirect",
-	Summary:       "Redirect to original URL",
-	Tags:          []string{shortURLTag},
-	DefaultStatus: http.StatusFound,
+type errorResponse struct {
+	status int
+	msg    string
+}
+
+// errorResponses is the one place a service error is given an HTTP status. Operations list
+// which of these errors they return, through register; they never pick a status themselves.
+var errorResponses = map[error]errorResponse{
+	service.ErrShortURLNotFound:   {http.StatusNotFound, "short URL not found"},
+	service.ErrShortURLIDConflict: {http.StatusConflict, "short URL ID already exists"},
+	// The API sets no length limit, but a storage backend may have one.
+	service.ErrOriginalURLTooLong: {http.StatusRequestEntityTooLarge, "original URL is too long for storage"},
+}
+
+// bodyReadErrors are the statuses returned before the handler runs on an operation with a
+// request body: missing body or malformed JSON (or a corrupt gzip body), body read timeout,
+// body of MaxBodyBytes or more, and a Content-Type or Content-Encoding the server cannot read.
+// huma and middleware.RequestDecompress both answer them as ErrorModel bodies, and neither
+// passes through a handler, so no service error can produce them. huma also appends 422 (for
+// any operation with a body or path params) and 500 itself; that 500 also answers a body the
+// client cut short, with the read error (e.g. "unexpected EOF") attached, since it never
+// reaches toHTTPError.
+var bodyReadErrors = []int{
+	http.StatusBadRequest,
+	http.StatusRequestTimeout,
+	http.StatusRequestEntityTooLarge,
+	http.StatusUnsupportedMediaType,
+}
+
+// operation is the part of huma.Operation register can vouch for. register builds the
+// huma.Operation itself, so a field that changes which statuses huma returns cannot be set
+// behind its back: Errors and Responses (register derives them), MaxBodyBytes and
+// BodyReadTimeout (a negative value disables the 413 and 408 it publishes), SkipValidateBody,
+// SkipValidateParams and RejectUnknownQueryParameters (they remove or add a 422), Middlewares
+// (they can write any status without passing through toHTTPError), RequestBody (a body huma
+// may never read) and Hidden (keeps the operation out of the document). Add a field only once
+// it is clear it changes none of the statuses register publishes.
+//
+// There is no tags field: every operation is a short URL operation so far, and register tags
+// it shortURLTag. Add one with the first operation that needs another tag.
+type operation struct {
+	// id is the OpenAPI operationId. It must be unique across the API.
+	id string
+
+	// method is the HTTP method, e.g. http.MethodGet.
+	method string
+
+	// path is the route, with {name} for each path parameter.
+	path string
+
+	// summary is the one-line description published in the document.
+	summary string
+
+	// defaultStatus is the success status; 0 keeps huma's default.
+	defaultStatus int
+
+	// errs lists every error the handler returns. It is published through errorResponses and
+	// is the only list the handler's errors are converted through.
+	errs []error
+}
+
+// register registers h as op, with op.errs as the single source of its error responses, so a
+// handler cannot return an error status the OpenAPI document does not list. h returns service
+// errors as they are.
+//
+// The published list must be exhaustive for what the server returns: what op.errs cannot
+// prove is that the service still returns each error, so
+// TestRegisterDeclaresEveryReachableErrorStatus drives a request to every listed error.
+func register[I, O any](api huma.API, op operation, h func(context.Context, *I) (*O, error)) {
+	// A Body field is what makes huma limit, read and parse the body, the four ways
+	// bodyReadErrors lists. A RawBody fails differently: it gets no size limit and is never
+	// parsed (no 413 or 415), so register refuses it rather than publish statuses it cannot
+	// return.
+	inputType := reflect.TypeFor[I]()
+	if _, ok := inputType.FieldByName("RawBody"); ok {
+		panic(fmt.Sprintf("handler: %s: register only knows the error statuses of a Body input, not a RawBody", op.id))
+	}
+
+	var framework []int
+	if _, ok := inputType.FieldByName("Body"); ok {
+		framework = bodyReadErrors
+	}
+
+	huma.Register(api, huma.Operation{
+		OperationID:   op.id,
+		Method:        op.method,
+		Path:          op.path,
+		Summary:       op.summary,
+		Tags:          []string{shortURLTag},
+		DefaultStatus: op.defaultStatus,
+		Errors:        errorStatuses(framework, op.errs),
+		// huma adds `default` only to an operation that lists no errors, and never removes one
+		// already there. Kept, a generated client still decodes an ErrorModel for a status
+		// nobody lists, such as a gateway's 502.
+		Responses: map[string]*huma.Response{"default": defaultErrorResponse(api)},
+	}, func(ctx context.Context, input *I) (*O, error) {
+		out, err := h(ctx, input)
+		if err != nil {
+			return nil, toHTTPError(ctx, err, op.errs)
+		}
+
+		return out, nil
+	})
+}
+
+// defaultErrorResponse returns the catch-all `default` response, described the way huma
+// describes each listed error status.
+func defaultErrorResponse(api huma.API) *huma.Response {
+	example := huma.NewError(0, "")
+
+	contentType := "application/json"
+	if ctf, ok := example.(huma.ContentTypeFilter); ok {
+		contentType = ctf.ContentType(contentType)
+	}
+
+	errType := reflect.TypeOf(example)
+	for errType.Kind() == reflect.Pointer {
+		errType = errType.Elem()
+	}
+
+	return &huma.Response{
+		Description: "Error",
+		Content: map[string]*huma.MediaType{
+			contentType: {Schema: api.OpenAPI().Components.Schemas.Schema(errType, true, "Error")},
+		},
+	}
+}
+
+// errorStatuses returns the statuses to publish for an operation: those returned before
+// the handler runs, the 500 toHTTPError can always return, and the status of every error
+// the operation lists. The 500 keeps the list non-empty, which is what makes huma add its
+// own 422 and 500. It panics on an error errorResponses does not know, so a missing entry
+// fails the first test that builds an API instead of reaching a client as an undocumented
+// 500.
+func errorStatuses(framework []int, errs []error) []int {
+	statuses := append(slices.Clone(framework), http.StatusInternalServerError)
+
+	for _, target := range errs {
+		resp, ok := errorResponses[target]
+		if !ok {
+			panic(fmt.Sprintf("handler: no errorResponses entry for %q", target))
+		}
+
+		statuses = append(statuses, resp.status)
+	}
+
+	slices.Sort(statuses)
+
+	return slices.Compact(statuses)
+}
+
+// toHTTPError converts err into the response for the first of errs it matches. Anything
+// else is a 500 whose body carries no detail: the store wraps driver errors, which name
+// tables and columns, and huma serializes any attached error into the response. It is
+// logged instead, with the request's attributes, since the log is the only record.
+//
+// A known error the operation did not list is a 500 too, since answering with its real
+// status would publish nothing about it. The log marks it unlisted_error, because that is
+// a missing list entry rather than a server fault. A client that went away is not a server
+// fault either, so context.Canceled is logged at WARN; the response is still a 500 in the
+// access log.
+func toHTTPError(ctx context.Context, err error, errs []error) error {
+	for _, target := range errs {
+		if errors.Is(err, target) {
+			resp := errorResponses[target]
+
+			return huma.NewError(resp.status, resp.msg)
+		}
+	}
+
+	unlisted := false
+
+	for known := range errorResponses {
+		unlisted = unlisted || errors.Is(err, known)
+	}
+
+	level := slog.LevelError
+	if errors.Is(err, context.Canceled) {
+		level = slog.LevelWarn
+	}
+
+	slog.With(middleware.AttrsToAny(middleware.LoggerAttrsFromContext(ctx))...).
+		Log(ctx, level, "request failed", "error", err, "unlisted_error", unlisted)
+
+	return huma.NewError(http.StatusInternalServerError, http.StatusText(http.StatusInternalServerError))
 }
 
 // registerCreateShortURLRoute registers the create short URL endpoint on the given API.
-// The handler implements the full business logic using the provided service.
 func registerCreateShortURLRoute(api huma.API, svc service.ShortURLServicer) {
-	huma.Register(
+	register(
 		api,
-		createShortURLOperation,
+		operation{
+			id:      "create-short-url",
+			method:  http.MethodPost,
+			path:    "/api/v1/urls",
+			summary: "Create a short URL",
+			errs:    []error{service.ErrShortURLIDConflict, service.ErrOriginalURLTooLong},
+		},
 		func(ctx context.Context, input *createShortURLInput) (*shortURLOutput, error) {
 			entry, err := svc.Create(ctx, input.Body)
 			if err != nil {
-				if errors.Is(err, service.ErrShortURLIDConflict) {
-					return nil, huma.Error409Conflict("short URL ID already exists", err)
-				}
-
-				// The API sets no length limit, but a storage backend may have one.
-				// err is not attached: huma serializes it into the response body, and
-				// the store wraps the driver error, which names the table column.
-				if errors.Is(err, service.ErrOriginalURLTooLong) {
-					return nil, huma.Error413RequestEntityTooLarge(
-						"original URL is too long for storage",
-					)
-				}
-
-				return nil, internalServerError(ctx, "failed to create short URL", err)
+				return nil, err
 			}
 
 			return &shortURLOutput{Body: *entry}, nil
@@ -100,37 +258,21 @@ func registerCreateShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 	)
 }
 
-// internalServerError logs err and returns a 500 carrying msg alone. err is never attached:
-// huma serializes an attached error into the response body, and the store wraps driver
-// errors that name tables and columns. The log line, with the request's attributes, is the
-// only record of the failure. A client that went away is not a server fault, so
-// context.Canceled is logged at WARN; the response is still a 500 in the access log.
-func internalServerError(ctx context.Context, msg string, err error) error {
-	level := slog.LevelError
-	if errors.Is(err, context.Canceled) {
-		level = slog.LevelWarn
-	}
-
-	slog.With(middleware.AttrsToAny(middleware.LoggerAttrsFromContext(ctx))...).
-		Log(ctx, level, msg, "error", err)
-
-	return huma.Error500InternalServerError(msg)
-}
-
 // registerGetShortURLRoute registers the get short URL endpoint on the given API.
-// The handler implements the full business logic using the provided service.
 func registerGetShortURLRoute(api huma.API, svc service.ShortURLServicer) {
-	huma.Register(
+	register(
 		api,
-		getShortURLOperation,
+		operation{
+			id:      "get-short-url",
+			method:  http.MethodGet,
+			path:    "/api/v1/urls/{id}",
+			summary: "Get a short URL by ID",
+			errs:    []error{service.ErrShortURLNotFound},
+		},
 		func(ctx context.Context, input *shortURLIDInput) (*shortURLOutput, error) {
 			entry, err := svc.Get(ctx, input.ID)
 			if err != nil {
-				if errors.Is(err, service.ErrShortURLNotFound) {
-					return nil, huma.Error404NotFound("short URL not found")
-				}
-
-				return nil, internalServerError(ctx, "failed to get short URL", err)
+				return nil, err
 			}
 
 			return &shortURLOutput{Body: *entry}, nil
@@ -141,17 +283,20 @@ func registerGetShortURLRoute(api huma.API, svc service.ShortURLServicer) {
 // registerRedirectRoute registers the redirect endpoint on the given Huma API.
 // The handler retrieves a short URL and performs an HTTP 302 redirect to the original URL.
 func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
-	huma.Register(
+	register(
 		api,
-		redirectShortURLOperation,
+		operation{
+			id:            "redirect-short-url",
+			method:        http.MethodGet,
+			path:          "/api/v1/urls/{id}:redirect",
+			summary:       "Redirect to original URL",
+			defaultStatus: http.StatusFound,
+			errs:          []error{service.ErrShortURLNotFound},
+		},
 		func(ctx context.Context, input *shortURLIDInput) (*redirectOutput, error) {
 			entry, err := svc.Get(ctx, input.ID)
 			if err != nil {
-				if errors.Is(err, service.ErrShortURLNotFound) {
-					return nil, huma.Error404NotFound("short URL not found")
-				}
-
-				return nil, internalServerError(ctx, "failed to get short URL", err)
+				return nil, err
 			}
 
 			// Entries created before the scheme allowlist existed may hold a
@@ -164,13 +309,10 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 					"error", err,
 				)
 
-				return nil, huma.Error404NotFound("short URL not found")
+				return nil, service.ErrShortURLNotFound
 			}
 
-			return &redirectOutput{
-				Status:   http.StatusFound,
-				Location: string(entry.OriginalURL),
-			}, nil
+			return &redirectOutput{Location: string(entry.OriginalURL)}, nil
 		},
 	)
 }

@@ -4,22 +4,29 @@ package handler_test
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 	"github.com/min0625/minurl/internal/handler"
+	"github.com/min0625/minurl/internal/httpserver"
 	"github.com/min0625/minurl/internal/middleware"
 	"github.com/min0625/minurl/internal/service"
 	"github.com/min0625/minurl/internal/testhelpers"
@@ -152,11 +159,197 @@ func pathParamSchema(t *testing.T, spec *huma.OpenAPI, path string) *huma.Schema
 	return nil
 }
 
-// TestRegisterReturns500WithoutTheStorageError pins that a 500 never carries the store
-// error, which can name tables and columns, and that the log line replacing it carries the
-// request's attributes. It swaps the global slog default and so must not call t.Parallel:
-// Go holds every parallel test until the sequential ones have finished.
-func TestRegisterReturns500WithoutTheStorageError(t *testing.T) {
+// TestRegisterDeclaresEveryReachableErrorStatus drives a request to every error each
+// operation returns and checks the published document declares exactly those statuses, plus
+// the catch-all `default`. An undeclared status is one the document misdescribes, and a
+// declared one with no case here was never shown to be reachable.
+func TestRegisterDeclaresEveryReachableErrorStatus(t *testing.T) {
+	t.Parallel()
+
+	const createPath = "/api/v1/urls"
+
+	// The router the server runs, middleware included, so a status the middleware answers
+	// before huma cannot pass here unnoticed.
+	newAPI := func(store *testhelpers.Storage) *chi.Mux {
+		r, _ := httpserver.BuildAPI(newHandlerTestService(t, store), "test")
+
+		return r
+	}
+	storageFails := errors.New("storage unavailable")
+	validBody := `{"original_url":"https://example.com/"}`
+
+	tests := []struct {
+		name        string
+		api         *chi.Mux
+		method      string
+		target      string
+		contentType string
+		encoding    string
+		body        io.Reader
+		wantStatus  int
+	}{
+		{
+			name: "create: missing body", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "create: malformed JSON", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath, body: strings.NewReader(`{`),
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name: "create: corrupt gzip body", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath,
+			encoding: "gzip", body: strings.NewReader("\x1f\x8b\x08\x00corrupt"),
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			// A recorder has no connection to set a deadline on, so the timeout is faked here;
+			// TestBuildAPIAnswersAStalledBody in httpserver stalls a real one.
+			name: "create: body read timeout", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath, body: iotest.ErrReader(os.ErrDeadlineExceeded),
+			wantStatus: http.StatusRequestTimeout,
+		},
+		{
+			name: "create: id taken", api: newAPI(newStoreWithEntry(t, "taken", "https://example.com/")),
+			method: http.MethodPost, target: createPath,
+			body:       strings.NewReader(`{"original_url":"https://example.com/","id":"taken"}`),
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name: "create: body over the limit", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath, body: strings.NewReader(originalURLBodyOfLen(1 << 20)),
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			// Same status as the body limit, but through ErrOriginalURLTooLong: without this
+			// case, dropping that error from create's list would still reach a 413 above.
+			name:   "create: original URL too long for storage",
+			api:    newAPI(testhelpers.NewStorage().WithCreateError(service.ErrOriginalURLTooLong)),
+			method: http.MethodPost, target: createPath, body: strings.NewReader(validBody),
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name: "create: unsupported content type", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath, contentType: "text/plain", body: strings.NewReader(validBody),
+			wantStatus: http.StatusUnsupportedMediaType,
+		},
+		{
+			name: "create: unsupported content encoding", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath, encoding: "br", body: strings.NewReader(validBody),
+			wantStatus: http.StatusUnsupportedMediaType,
+		},
+		{
+			name: "create: invalid original URL", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodPost, target: createPath,
+			body:       strings.NewReader(`{"original_url":"javascript:alert(1)"}`),
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name: "create: storage fails", api: newAPI(testhelpers.NewStorage().WithCreateError(storageFails)),
+			method: http.MethodPost, target: createPath, body: strings.NewReader(validBody),
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name: "get: not found", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodGet, target: "/api/v1/urls/abc123",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name: "get: malformed id", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodGet, target: "/api/v1/urls/bad*id",
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name: "get: storage fails", api: newAPI(testhelpers.NewStorage().WithGetError(storageFails)),
+			method: http.MethodGet, target: "/api/v1/urls/abc123",
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			// Known to errorResponses (409) but not listed by get: answering 409 would return a
+			// status the document does not publish for this operation.
+			name:   "get: error the operation does not list",
+			api:    newAPI(testhelpers.NewStorage().WithGetError(service.ErrShortURLIDConflict)),
+			method: http.MethodGet, target: "/api/v1/urls/abc123",
+			wantStatus: http.StatusInternalServerError,
+		},
+		{
+			name: "redirect: not found", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodGet, target: "/api/v1/urls/abc123:redirect",
+			wantStatus: http.StatusNotFound,
+		},
+		{
+			name: "redirect: malformed id", api: newAPI(testhelpers.NewStorage()),
+			method: http.MethodGet, target: "/api/v1/urls/bad*id:redirect",
+			wantStatus: http.StatusUnprocessableEntity,
+		},
+		{
+			name: "redirect: storage fails", api: newAPI(testhelpers.NewStorage().WithGetError(storageFails)),
+			method: http.MethodGet, target: "/api/v1/urls/abc123:redirect",
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	reached := map[string][]string{}
+
+	for _, tt := range tests {
+		req := httptest.NewRequestWithContext(context.Background(), tt.method, tt.target, tt.body)
+		if tt.body != nil {
+			req.Header.Set("Content-Type", cmp.Or(tt.contentType, "application/json"))
+		}
+
+		if tt.encoding != "" {
+			req.Header.Set("Content-Encoding", tt.encoding)
+		}
+
+		resp := httptest.NewRecorder()
+		tt.api.ServeHTTP(resp, req)
+
+		if resp.Code != tt.wantStatus {
+			t.Errorf("%s: status = %d, want %d (body %s)", tt.name, resp.Code, tt.wantStatus, resp.Body.String())
+		}
+
+		// Every one of these is documented as an ErrorModel, so a plain-text answer is a
+		// status the document misdescribes too.
+		if got := resp.Header().Get("Content-Type"); got != "application/problem+json" {
+			t.Errorf("%s: content type = %q, want application/problem+json", tt.name, got)
+		}
+
+		if strings.Contains(resp.Body.String(), storageFails.Error()) {
+			t.Errorf("%s: body leaks the storage error: %s", tt.name, resp.Body.String())
+		}
+
+		// Keyed by the route the request matched, as the document keys operations by method and
+		// path, so a target that lands on another operation cannot vouch for this one.
+		op := tt.method + " " + tt.api.Find(chi.NewRouteContext(), tt.method, req.URL.Path)
+		reached[op] = append(reached[op], strconv.Itoa(tt.wantStatus))
+	}
+
+	// The document make gen publishes, not a stand-in built here with its own config.
+	for key, op := range testhelpers.Operations(httpserver.BuildOpenAPISpec("test")) {
+		want := slices.Concat(reached[key], []string{"default"})
+		slices.Sort(want)
+		want = slices.Compact(want)
+
+		if got := testhelpers.ErrorResponses(op); !slices.Equal(got, want) {
+			t.Errorf("%s: declared error responses = %v, reached = %v", key, got, want)
+		}
+
+		delete(reached, key)
+	}
+
+	for key := range reached {
+		t.Errorf("%s: cases target an operation the document does not have", key)
+	}
+}
+
+// TestRegisterLogsUnexpectedErrors pins that a 500 never carries the error behind it, which
+// can name tables and columns, and that the log line replacing it carries the request's
+// attributes, since it is the only record of the failure. It swaps the global slog default
+// and so must not call t.Parallel: Go holds every parallel test until the sequential ones
+// have finished.
+func TestRegisterLogsUnexpectedErrors(t *testing.T) {
 	var logs bytes.Buffer
 
 	origLogger, origWriter, origFlags := slog.Default(), log.Writer(), log.Flags()
@@ -174,34 +367,53 @@ func TestRegisterReturns500WithoutTheStorageError(t *testing.T) {
 	createBody := `{"original_url":"https://example.com/"}`
 
 	tests := []struct {
-		name      string
-		store     *testhelpers.Storage
-		method    string
-		target    string
-		body      string
-		wantLevel string
+		name         string
+		store        *testhelpers.Storage
+		method       string
+		target       string
+		body         string
+		wantStatus   int
+		wantLevel    string // empty: nothing is logged
+		wantUnlisted bool
 	}{
 		{
 			name: "create", store: testhelpers.NewStorage().WithCreateError(storeErr),
 			method: http.MethodPost, target: "/api/v1/urls", body: createBody,
-			wantLevel: "ERROR",
+			wantStatus: http.StatusInternalServerError, wantLevel: "ERROR",
 		},
 		{
 			name: "get", store: testhelpers.NewStorage().WithGetError(storeErr),
 			method: http.MethodGet, target: "/api/v1/urls/abc123",
-			wantLevel: "ERROR",
+			wantStatus: http.StatusInternalServerError, wantLevel: "ERROR",
 		},
 		{
 			name: "redirect", store: testhelpers.NewStorage().WithGetError(storeErr),
 			method: http.MethodGet, target: "/api/v1/urls/abc123:redirect",
-			wantLevel: "ERROR",
+			wantStatus: http.StatusInternalServerError, wantLevel: "ERROR",
 		},
 		{
-			// The client went away: not a server fault, so logged below ERROR.
+			// The client went away: not a server fault, so logged below ERROR. The response is
+			// still a 500, so the access log and the span count it as one.
 			name:   "client went away",
 			store:  testhelpers.NewStorage().WithGetError(fmt.Errorf("%w: %w", storeErr, context.Canceled)),
 			method: http.MethodGet, target: "/api/v1/urls/abc123",
-			wantLevel: "WARN",
+			wantStatus: http.StatusInternalServerError, wantLevel: "WARN",
+		},
+		{
+			// A missing list entry, not a server fault, so the log says which it is.
+			name: "error the operation does not list",
+			store: testhelpers.NewStorage().
+				WithGetError(fmt.Errorf("%w: %w", storeErr, service.ErrShortURLIDConflict)),
+			method:       http.MethodGet,
+			target:       "/api/v1/urls/abc123",
+			wantStatus:   http.StatusInternalServerError,
+			wantLevel:    "ERROR",
+			wantUnlisted: true,
+		},
+		{
+			name: "listed error", store: testhelpers.NewStorage(),
+			method: http.MethodGet, target: "/api/v1/urls/abc123",
+			wantStatus: http.StatusNotFound,
 		},
 	}
 
@@ -218,23 +430,27 @@ func TestRegisterReturns500WithoutTheStorageError(t *testing.T) {
 			resp := httptest.NewRecorder()
 			r.ServeHTTP(resp, req)
 
-			if resp.Code != http.StatusInternalServerError {
-				t.Fatalf(
-					"status = %d, want %d (body %s)",
-					resp.Code,
-					http.StatusInternalServerError,
-					resp.Body.String(),
-				)
+			if resp.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d (body %s)", resp.Code, tt.wantStatus, resp.Body.String())
 			}
 
 			if strings.Contains(resp.Body.String(), "short_urls") {
-				t.Fatalf("500 body leaks the storage error: %s", resp.Body.String())
+				t.Fatalf("body leaks the storage error: %s", resp.Body.String())
+			}
+
+			if tt.wantLevel == "" {
+				if logs.Len() != 0 {
+					t.Fatalf("logged %s, want nothing", logs.String())
+				}
+
+				return
 			}
 
 			var record struct {
-				Level     string `json:"level"`
-				Error     string `json:"error"`
-				RequestID string `json:"request_id"`
+				Level         string `json:"level"`
+				Error         string `json:"error"`
+				RequestID     string `json:"request_id"`
+				UnlistedError bool   `json:"unlisted_error"`
 			}
 
 			if err := json.Unmarshal(logs.Bytes(), &record); err != nil {
@@ -242,11 +458,12 @@ func TestRegisterReturns500WithoutTheStorageError(t *testing.T) {
 			}
 
 			if record.Level != tt.wantLevel || record.RequestID != "req-1" ||
-				!strings.Contains(record.Error, "short_urls") {
+				!strings.Contains(record.Error, "short_urls") || record.UnlistedError != tt.wantUnlisted {
 				t.Fatalf(
-					"log = %s, want level %s with the storage error and request_id req-1",
+					"log = %s, want level %s with the storage error, request_id req-1 and unlisted_error %v",
 					logs.String(),
 					tt.wantLevel,
+					tt.wantUnlisted,
 				)
 			}
 		})
@@ -648,10 +865,18 @@ func TestRegisterCreateShortURLReturns413WhenOriginalURLTooLong(t *testing.T) {
 	}
 }
 
-// newAPIWithLegacyEntry registers the routes over a store holding one row written straight
-// to storage, bypassing the service so it looks like an entry created before the allowlist
-// existed.
+// newAPIWithLegacyEntry registers the routes over newStoreWithEntry.
 func newAPIWithLegacyEntry(t *testing.T, id, originalURL string) http.Handler {
+	t.Helper()
+
+	r, _ := newTestAPI(t, newStoreWithEntry(t, id, originalURL))
+
+	return r
+}
+
+// newStoreWithEntry returns a store holding one row written straight to storage, bypassing
+// the service so it looks like an entry created before the allowlist existed.
+func newStoreWithEntry(t *testing.T, id, originalURL string) *testhelpers.Storage {
 	t.Helper()
 
 	store := testhelpers.NewStorage()
@@ -665,9 +890,7 @@ func newAPIWithLegacyEntry(t *testing.T, id, originalURL string) http.Handler {
 		t.Fatalf("CreateIfAbsent() = %v, %v, want true, nil", created, err)
 	}
 
-	r, _ := newTestAPI(t, store)
-
-	return r
+	return store
 }
 
 func TestRegisterRedirectRouteReturns404ForNonHTTPStoredURL(t *testing.T) {
