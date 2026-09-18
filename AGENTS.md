@@ -91,7 +91,7 @@ which is why the redirect handler calls `IsValidOriginalURL` itself for stored r
 **`huma.ValidateStrictCasing` is load-bearing.** huma validates the exact JSON key, but
 `encoding/json` then matches keys case-insensitively and keeps the last one, so without it
 `{"id":"abc","ID":"bad*id"}` stores the unvalidated `ID`, and `"ORIGINAL_URL":""` slips an
-empty URL past `minLength`. It is set in `init()` in `internal/handler/short_url.go`
+empty URL past `minLength`. It is set in `init()` in `internal/handler/register.go`
 (not in `Register`: tests build APIs in parallel, so a write there would be a data race).
 
 `OriginalURL` has **no length limit, deliberately**. `minLength` is load-bearing though:
@@ -121,7 +121,7 @@ pins the body property and both published path params to `Base58Alphabet` and
 
 ### Error responses
 
-Three pieces in `internal/handler/short_url.go`:
+Three pieces in `internal/handler/register.go`:
 
 1. **The service defines the errors** (`service.ErrShortURLNotFound`, `ErrShortURLIDConflict`, …).
 2. **`errorResponses` gives each error its status and message, once**, for every operation.
@@ -191,7 +191,7 @@ failure: define the error in `service`, add it to `errorResponses` and to the op
 | Layer | Package | Key files |
 |-------|---------|-----------|
 | Entry | `cmd/minurl` | `main.go`, `server.go`, `service_factory.go`, `config.go` |
-| Handler | `internal/handler` | `short_url.go`, `health.go` |
+| Handler | `internal/handler` | `register.go` (operation/error plumbing), `short_url.go` (routes), `health.go` |
 | Service | `internal/service` | `short_url.go`, `model.go`, `validation.go`, `id_generator.go`, `id_counter.go`, `interface.go`, `storage.go` |
 | Store | `internal/store` | `sqlite.go` (SQLite), `postgres.go`, `mysql.go`, `migrations.go`, `pinger.go` |
 | Test helpers | `internal/testhelpers` | In-memory fakes for unit tests |
