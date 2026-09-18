@@ -321,9 +321,11 @@ func TestRegisterDeclaresEveryReachableErrorStatus(t *testing.T) {
 		}
 
 		// Keyed by the route the request matched, as the document keys operations by method and
-		// path, so a target that lands on another operation cannot vouch for this one.
+		// path, so a target that lands on another operation cannot vouch for this one. The status
+		// is the one the server answered, not the one wanted, so a case that stops returning its
+		// status is reported against what it really reaches.
 		op := tt.method + " " + tt.api.Find(chi.NewRouteContext(), tt.method, req.URL.Path)
-		reached[op] = append(reached[op], strconv.Itoa(tt.wantStatus))
+		reached[op] = append(reached[op], strconv.Itoa(resp.Code))
 	}
 
 	// The document make gen publishes, not a stand-in built here with its own config.

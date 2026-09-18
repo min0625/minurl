@@ -159,10 +159,12 @@ failure: define the error in `service`, add it to `errorResponses` and to the op
   test that builds an API fails: an error `errorResponses` lacks, and an input with a `RawBody`
   field (see below).
 - **The published list must be exhaustive for what the server returns.** A non-empty
-  `Operation.Errors` makes huma skip its `default` response; `register` sets `default` before
-  `huma.Register`, which never removes one, so the Kiota client still decodes an `ErrorModel` for
-  a status nobody lists (a gateway's 502, a status a huma upgrade adds). `default` is that safety
-  net, not a substitute for listing.
+  `Operation.Errors` makes huma skip its `default` response; `register` adds `default` once
+  `huma.Register` returns, to the `Responses` map it handed in — huma publishes that same map —
+  so the Kiota client still decodes an `ErrorModel` for a status nobody lists (a gateway's 502, a
+  status a huma upgrade adds). Its content is the map huma wrote for `500`, the status every
+  operation lists, shared rather than copied. `default` is that safety net, not a substitute for
+  listing.
 - **Statuses returned before the handler runs** (`bodyReadErrors`: 400 / 408 / 413 / 415) cannot
   come from a service error. huma returns them while reading the body, and
   `middleware.RequestDecompress` returns them for a body with a `Content-Encoding` (400 / 408 /
