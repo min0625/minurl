@@ -119,6 +119,69 @@ needs `+`. Only those two declarations remain — the get and redirect operation
 pins the body property and both published path params to `Base58Alphabet` and
 `MaxShortURLIDLen`.
 
+### Error responses
+
+Three pieces in `internal/handler/short_url.go`:
+
+1. **The service defines the errors** (`service.ErrShortURLNotFound`, `ErrShortURLIDConflict`, …).
+2. **`errorResponses` gives each error its status and message, once**, for every operation.
+3. **Every operation is registered through `register(api, operation{…}, handler)`**, never
+   `huma.Register` directly. `operation.errs` lists the errors the operation returns; `register`
+   publishes their statuses as `Operation.Errors` and converts the handler's errors through the
+   same list. The handler returns service errors as they are.
+
+**`register` takes its own `operation`, not a `huma.Operation`.** It builds the `huma.Operation`
+itself, so fields that change which statuses huma returns cannot be set around it: `Errors` /
+`Responses`, `MaxBodyBytes` / `BodyReadTimeout` (a negative value disables the 413 / 408 it
+publishes), `SkipValidateBody` / `SkipValidateParams` / `RejectUnknownQueryParameters` (remove or
+add a 422), `Middlewares` (write any status without passing through `toHTTPError`), `RequestBody`
+and `Hidden`. Add a field to `operation` only once it is clear it changes none of the published
+statuses, and copy it in `register` (`TestRegisterBuildsTheHumaOperation` pins that copy). Tags
+are not a field yet: every operation is tagged `ShortURL`; add one with the first operation that
+needs another tag.
+
+A handler cannot return an error status the OpenAPI document does not list: every error it
+returns goes through `toHTTPError`, so even a `huma.ErrorXXX` it builds itself is not in `errs`
+and becomes a 500. Only `toHTTPError` returns a `huma.ErrorXXX` / `huma.NewError`. The success
+status is `operation.defaultStatus`; outputs have no `Status` field, which huma would write as-is. To add a
+failure: define the error in `service`, add it to `errorResponses` and to the operation's
+`errs`, then add a case to `TestRegisterDeclaresEveryReachableErrorStatus`.
+
+- **An error the operation does not list is a 500**, even if `errorResponses` knows it: its real
+  status is unpublished for that operation. Its log line carries `unlisted_error=true`.
+- **Any 500 a handler returns carries no detail and is logged instead**, with the request's
+  `method`, `path`, `request_id` and trace attributes. huma serializes an attached error into the
+  body, and the store wraps driver errors that name tables and columns. A `context.Canceled` (the
+  client went away) is logged at WARN, not ERROR, but is still a 500 in the access log and span.
+  huma's own 500 for a body the client cut short never reaches `toHTTPError`: it carries the read
+  error (`unexpected EOF`), which names nothing on the server side.
+- **`register` panics at registration rather than publish a list it cannot vouch for**, so every
+  test that builds an API fails: an error `errorResponses` lacks, and an input with a `RawBody`
+  field (see below).
+- **The published list must be exhaustive for what the server returns.** A non-empty
+  `Operation.Errors` makes huma skip its `default` response; `register` sets `default` before
+  `huma.Register`, which never removes one, so the Kiota client still decodes an `ErrorModel` for
+  a status nobody lists (a gateway's 502, a status a huma upgrade adds). `default` is that safety
+  net, not a substitute for listing.
+- **Statuses returned before the handler runs** (`bodyReadErrors`: 400 / 408 / 413 / 415) cannot
+  come from a service error. huma returns them while reading the body, and
+  `middleware.RequestDecompress` returns them for a body with a `Content-Encoding` (400 / 408 /
+  413 for gzip, 415 for any other encoding), both as `ErrorModel`.
+  `register` adds them when the input has a `Body` field (promoted fields count, as they do for
+  huma), since that is what makes huma limit, read and parse the body. A `RawBody` gets no size
+  limit and is never parsed (no 413 / 415), so it panics until someone works out its statuses and
+  adds reachability cases. `register` always adds 500, which keeps `Operation.Errors` non-empty so
+  huma appends 422 and 500 itself.
+- **The lists cannot prove the service still returns each error.** The reachability test covers
+  that direction, so every listed *error*, not just every status, needs a request that returns
+  it — `ErrOriginalURLTooLong` and the body limit are both 413. It drives `httpserver.BuildAPI`,
+  so the middleware's statuses count, and reads the document `BuildOpenAPISpec` publishes.
+- **HTTP status stays out of `service`.** Do not implement `huma.StatusError` on service errors:
+  huma would use that status directly, bypassing the operation's list and the document.
+- **Resolvers are outside the funnel.** huma answers with the status of any `StatusError` a
+  resolver returns, never seeing `toHTTPError`. A resolver returns `*huma.ErrorDetail` (always
+  422, as `OriginalURL.Resolve` does), never `huma.ErrorXXX`.
+
 **Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
 
 ## Layer Responsibilities

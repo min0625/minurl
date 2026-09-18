@@ -10,6 +10,7 @@ A short URL service project implemented in Go.
 - [Database migrations](#database-migrations)
 - [API Documentation](#api-documentation)
   - [API Endpoints](#api-endpoints)
+  - [Error Responses](#error-responses)
 - [Health Check Endpoints](#health-check-endpoints)
 - [Short URL Expiry](#short-url-expiry)
 - [Short URL ID Format](#short-url-id-format)
@@ -85,8 +86,8 @@ silently truncated — MySQL only raises an error for an over-length value when 
 runs in strict SQL mode. SQLite and PostgreSQL have no such column limit, so the same
 request succeeds there.
 
-The request body itself is capped at 1 MiB on every backend, so that is the practical
-ceiling for a URL — past it the same `413` comes from the HTTP layer instead of the store.
+The request body itself must stay under 1 MiB on every backend, so that is the practical
+ceiling for a URL — at 1 MiB the same `413` comes from the HTTP layer instead of the store.
 
 ### MySQL DSN query parameters
 
@@ -150,7 +151,7 @@ a literal space — returns `422 Unprocessable Entity`. The allowlist covers the
 only. It does not restrict which host a short URL may point at: private and loopback
 addresses, cloud metadata endpoints and internationalized domains are all accepted. MinURL
 never fetches the URL itself, so this is a redirect target, not a server-side request.
-`original_url` has no length limit of its own; the request body is capped at 1 MiB. On MySQL
+`original_url` has no length limit of its own; the request body must stay under 1 MiB. On MySQL
 the column is `TEXT`, so a URL over 65,535 bytes returns `413 Request Entity Too Large`;
 SQLite and PostgreSQL have no such column limit.)
 ```
@@ -200,6 +201,30 @@ Location: https://example.com/very/long/url
 > The redirect endpoint applies the same `original_url` rules to stored data, so a short URL
 > whose target does not satisfy them returns `404 Not Found`. `GET /api/v1/urls/{id}` still
 > returns it, so the row can be found and fixed.
+
+### Error Responses
+
+Errors use the `ErrorModel` body (`application/problem+json`), and the OpenAPI document lists
+every status each endpoint returns:
+
+| Status | Endpoints | When |
+|--------|-----------|------|
+| `400 Bad Request` | create | The body is missing, is not valid JSON, or is a corrupt gzip stream |
+| `404 Not Found` | get, redirect | The short URL does not exist, has expired, or (redirect only) its stored target breaks the `original_url` rules |
+| `408 Request Timeout` | create | The body, gzip or not, was not received within 5 seconds |
+| `409 Conflict` | create | The requested `id` is already taken |
+| `413 Request Entity Too Large` | create | The body is 1 MiB or larger (a gzip body: once decompressed, or over 1 MiB as sent), or `original_url` is too long for the storage backend |
+| `415 Unsupported Media Type` | create | The `Content-Type` is not JSON, or the `Content-Encoding` is not `gzip` |
+| `422 Unprocessable Entity` | all | The body or `{id}` parses but breaks a schema rule |
+| `500 Internal Server Error` | all | The server failed, e.g. the database is unreachable |
+
+A request that fails validation is a `422`; `400` is reserved for a body that cannot be parsed
+at all. A `404`, a `409`, a `413` for a URL too long for storage and a `500` carry `detail`
+alone, with no `errors`. A `500` says only `Internal Server Error`; the cause is written to
+the server log. Two `500`s differ: a body the client cut short carries the read error in
+`errors`, and a server panic answers `text/plain`.
+The document also declares a `default` `ErrorModel` response, so a generated client decodes
+any other status, e.g. from a proxy, the same way.
 
 ## Health Check Endpoints
 
