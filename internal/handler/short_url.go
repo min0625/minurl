@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"reflect"
 	"slices"
+	"strconv"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/min0625/minurl/internal/middleware"
@@ -132,6 +133,8 @@ func register[I, O any](api huma.API, op operation, h func(context.Context, *I) 
 		framework = bodyReadErrors
 	}
 
+	responses := map[string]*huma.Response{}
+
 	huma.Register(api, huma.Operation{
 		OperationID:   op.id,
 		Method:        op.method,
@@ -140,10 +143,7 @@ func register[I, O any](api huma.API, op operation, h func(context.Context, *I) 
 		Tags:          []string{shortURLTag},
 		DefaultStatus: op.defaultStatus,
 		Errors:        errorStatuses(framework, op.errs),
-		// huma adds `default` only to an operation that lists no errors, and never removes one
-		// already there. Kept, a generated client still decodes an ErrorModel for a status
-		// nobody lists, such as a gateway's 502.
-		Responses: map[string]*huma.Response{"default": defaultErrorResponse(api)},
+		Responses:     responses,
 	}, func(ctx context.Context, input *I) (*O, error) {
 		out, err := h(ctx, input)
 		if err != nil {
@@ -152,28 +152,16 @@ func register[I, O any](api huma.API, op operation, h func(context.Context, *I) 
 
 		return out, nil
 	})
-}
 
-// defaultErrorResponse returns the catch-all `default` response, described the way huma
-// describes each listed error status.
-func defaultErrorResponse(api huma.API) *huma.Response {
-	example := huma.NewError(0, "")
-
-	contentType := "application/json"
-	if ctf, ok := example.(huma.ContentTypeFilter); ok {
-		contentType = ctf.ContentType(contentType)
-	}
-
-	errType := reflect.TypeOf(example)
-	for errType.Kind() == reflect.Pointer {
-		errType = errType.Elem()
-	}
-
-	return &huma.Response{
+	// huma adds `default` only to an operation that lists no errors, and never removes one
+	// already there. Kept, a generated client still decodes an ErrorModel for a status nobody
+	// lists, such as a gateway's 502. huma publishes the very map it was handed, so describing
+	// `default` after registration returns can reuse the content huma wrote for 500 — the status
+	// errorStatuses always lists — instead of mirroring huma's unexported defineErrors. The two
+	// share that content map: changing what one of them describes changes the other.
+	responses["default"] = &huma.Response{
 		Description: "Error",
-		Content: map[string]*huma.MediaType{
-			contentType: {Schema: api.OpenAPI().Components.Schemas.Schema(errType, true, "Error")},
-		},
+		Content:     responses[strconv.Itoa(http.StatusInternalServerError)].Content,
 	}
 }
 
@@ -222,7 +210,11 @@ func toHTTPError(ctx context.Context, err error, errs []error) error {
 	unlisted := false
 
 	for known := range errorResponses {
-		unlisted = unlisted || errors.Is(err, known)
+		if errors.Is(err, known) {
+			unlisted = true
+
+			break
+		}
 	}
 
 	level := slog.LevelError

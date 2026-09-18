@@ -205,7 +205,7 @@ Location: https://example.com/very/long/url
 ### Error Responses
 
 Errors use the `ErrorModel` body (`application/problem+json`), and the OpenAPI document lists
-every status each endpoint returns:
+every status each of these operations returns:
 
 | Status | Endpoints | When |
 |--------|-----------|------|
@@ -222,7 +222,9 @@ A request that fails validation is a `422`; `400` is reserved for a body that ca
 at all. A `404`, a `409`, a `413` for a URL too long for storage and a `500` carry `detail`
 alone, with no `errors`. A `500` says only `Internal Server Error`; the cause is written to
 the server log. Two `500`s differ: a body the client cut short carries the read error in
-`errors`, and a server panic answers `text/plain`.
+`errors`, and a server panic answers `text/plain`. A request that matches no operation is
+answered by the router rather than the API, and not as an `ErrorModel`: another method on one of
+these paths gets a bodiless `405` with an `Allow` header, an unrouted path a `text/plain` `404`.
 The document also declares a `default` `ErrorModel` response, so a generated client decodes
 any other status, e.g. from a proxy, the same way.
 

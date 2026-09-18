@@ -80,7 +80,8 @@ func TestRegisterBuildsTheHumaOperation(t *testing.T) {
 			got.DefaultStatus, slices.Collect(maps.Keys(got.Responses)))
 	}
 
-	// register describes `default` itself; it must match what huma writes for a listed status.
+	// register adds `default` after huma.Register, from the content huma described 500 with;
+	// without it the map huma published carries no default at all.
 	if def, want := got.Responses["default"], got.Responses["500"]; def == nil || want == nil ||
 		!reflect.DeepEqual(def.Content, want.Content) {
 		t.Errorf("default response = %+v, want the content of the 500 response %+v", def, want)
