@@ -196,7 +196,7 @@ failure: define the error in `service`, add it to `errorResponses` and to the op
 | Store | `internal/store` | `sqlite.go` (SQLite), `postgres.go`, `mysql.go`, `migrations.go`, `pinger.go` |
 | Test helpers | `internal/testhelpers` | In-memory fakes for unit tests |
 | HTTP server | `internal/httpserver` | HTTP server lifecycle |
-| Middleware | `internal/middleware` | Logging, recovery, decompression |
+| Middleware | `internal/middleware` | `logging.go`, `recovery.go`, `decompress.go`, `middleware.go` (`ResponseWriter`) |
 | Telemetry | `internal/telemetry` | OpenTelemetry initialization |
 
 ## Health Check Endpoints
