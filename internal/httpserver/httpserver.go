@@ -4,7 +4,9 @@
 package httpserver
 
 import (
+	"cmp"
 	"net"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -14,12 +16,45 @@ import (
 	"github.com/min0625/minurl/internal/service"
 )
 
+// allowMethods are the methods chi routes, in the order a 405's Allow header lists them.
+var allowMethods = []string{
+	http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
+	http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace,
+}
+
 // NewRouter creates a chi router with the standard middleware stack applied.
+//
+// A request that matches no operation never reaches huma, so the router answers it with
+// an ErrorModel itself, instead of chi's text/plain 404 and bodiless 405.
 func NewRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.PanicRecovery)
 	r.Use(middleware.RequestLogger)
 	r.Use(middleware.AccessLog)
+
+	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
+		middleware.WriteError(w, http.StatusNotFound)
+	})
+	r.MethodNotAllowed(func(w http.ResponseWriter, req *http.Request) {
+		// chi writes Allow only in its own 405 handler and passes a custom one nothing,
+		// but a 405 must list the allowed methods (RFC 9110 §15.5.6), so ask the router.
+		// The path is the one chi routes on, as long as no middleware rewrites RoutePath.
+		path := cmp.Or(req.URL.RawPath, req.URL.Path)
+
+		// chi sends a method it does not know here before it looks the path up, so a path
+		// no method matches is still a 404.
+		status := http.StatusNotFound
+
+		for _, method := range allowMethods {
+			if r.Match(chi.NewRouteContext(), method, path) {
+				w.Header().Add("Allow", method)
+
+				status = http.StatusMethodNotAllowed
+			}
+		}
+
+		middleware.WriteError(w, status)
+	})
 
 	return r
 }

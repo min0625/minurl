@@ -3,6 +3,10 @@
 package testhelpers
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"slices"
 
@@ -47,4 +51,27 @@ func ErrorResponses(op *huma.Operation) []string {
 	slices.Sort(codes)
 
 	return codes
+}
+
+// DecodeErrorModel decodes body as a single ErrorModel, rejecting any field the published
+// schema does not declare (it sets additionalProperties: false) and anything after it.
+// The schema declares $schema, which huma adds to its own errors and ErrorModel lacks.
+func DecodeErrorModel(body []byte) (huma.ErrorModel, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.DisallowUnknownFields()
+
+	var m struct {
+		Schema string `json:"$schema"`
+		huma.ErrorModel
+	}
+
+	if err := dec.Decode(&m); err != nil {
+		return huma.ErrorModel{}, err
+	}
+
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return huma.ErrorModel{}, errors.New("data after the ErrorModel")
+	}
+
+	return m.ErrorModel, nil
 }

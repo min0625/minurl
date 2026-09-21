@@ -117,3 +117,6 @@ GET {{baseUrl}}/api/v1/urls/zzzzzz HTTP/1.1
 
 ### Redirect not found example (expected HTTP 404)
 GET {{baseUrl}}/api/v1/urls/zzzzzz:redirect HTTP/1.1
+
+### Method not allowed example (expected HTTP 405, ErrorModel body, Allow: GET)
+DELETE {{baseUrl}}/api/v1/urls/zzzzzz HTTP/1.1

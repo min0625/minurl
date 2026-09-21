@@ -183,6 +183,14 @@ failure: define the error in `service`, add it to `errorResponses` and to the op
 - **Resolvers are outside the funnel.** huma answers with the status of any `StatusError` a
   resolver returns, never seeing `toHTTPError`. A resolver returns `*huma.ErrorDetail` (always
   422, as `OriginalURL.Resolve` does), never `huma.ErrorXXX`.
+- **Responses huma never sees still answer an `ErrorModel`, through `middleware.WriteError`**:
+  a recovered panic (`PanicRecovery`), and a request no operation matches — `NewRouter` sets
+  chi's `NotFound` and `MethodNotAllowed`. chi writes `Allow` only in its own 405 handler, so the
+  custom one rebuilds it with `Mux.Match`, and answers 404 when no method matches: chi sends a
+  method it does not know there before it looks the path up. The body comes from
+  `huma.NewError`, like `toHTTPError`'s 500, so an override of it reaches these too. Only what
+  `net/http` refuses before routing (e.g. a 431, or a 400 for a malformed request line) gets no
+  `ErrorModel`.
 
 **Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
 

@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"testing"
 	"time"
@@ -208,6 +209,102 @@ func (a mockAddr) Network() string {
 
 func (a mockAddr) String() string {
 	return a.value
+}
+
+// TestBuildAPIAnswersUnroutedRequestsWithAnErrorModel pins what the router answers for a
+// request no operation matches: the ErrorModel every operation publishes as its default
+// response, not chi's text/plain 404 and bodiless 405, and a 405 still lists the methods the
+// path takes, which chi leaves to its own handler.
+func TestBuildAPIAnswersUnroutedRequestsWithAnErrorModel(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		method, target string
+		wantStatus     int
+		wantAllow      []string
+	}{
+		{method: http.MethodGet, target: "/api/v1/nope", wantStatus: http.StatusNotFound},
+		{method: http.MethodGet, target: "/api/v1/urls/abc/", wantStatus: http.StatusNotFound},
+		{
+			method:     http.MethodPost,
+			target:     "/api/v1/urls/abc",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  []string{"GET"},
+		},
+		{
+			method:     http.MethodDelete,
+			target:     "/api/v1/urls/abc:redirect",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  []string{"GET"},
+		},
+		{
+			method:     http.MethodHead,
+			target:     "/api/v1/urls/abc:redirect",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  []string{"GET"},
+		},
+		{
+			method:     http.MethodGet,
+			target:     "/api/v1/urls",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  []string{"POST"},
+		},
+		// chi's own handler lists nothing for a method it does not route at all.
+		{
+			method:     "BREW",
+			target:     "/api/v1/urls/abc",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  []string{"GET"},
+		},
+		// chi sends such a method to the 405 handler without looking the path up.
+		{method: "BREW", target: "/api/v1/nope", wantStatus: http.StatusNotFound},
+	}
+
+	svc, err := service.NewShortURLServiceWithAllDependencies(
+		testhelpers.NewStorage(), testhelpers.NewCounter(), nil,
+	)
+	if err != nil {
+		t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
+	}
+
+	r, _ := httpserver.BuildAPI(svc, "test")
+
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.target, func(t *testing.T) {
+			t.Parallel()
+
+			req := httptest.NewRequestWithContext(t.Context(), tt.method, tt.target, nil)
+			res := httptest.NewRecorder()
+
+			r.ServeHTTP(res, req)
+
+			if res.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d", res.Code, tt.wantStatus)
+			}
+
+			if got := res.Header().Get("Content-Type"); got != "application/problem+json" {
+				t.Fatalf("Content-Type = %q, want application/problem+json", got)
+			}
+
+			if got := res.Header().Values("Allow"); !slices.Equal(got, tt.wantAllow) {
+				t.Fatalf("Allow = %q, want %q", got, tt.wantAllow)
+			}
+
+			got, err := testhelpers.DecodeErrorModel(res.Body.Bytes())
+			if err != nil {
+				t.Fatalf("decode ErrorModel from %q: %v", res.Body.String(), err)
+			}
+
+			want := huma.ErrorModel{
+				Title:  http.StatusText(tt.wantStatus),
+				Status: tt.wantStatus,
+				Detail: http.StatusText(tt.wantStatus),
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("ErrorModel = %+v, want %+v", got, want)
+			}
+		})
+	}
 }
 
 // TestBuildOpenAPISpecMatchesRuntimeRoutes guards the reason both documents are

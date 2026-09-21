@@ -2,11 +2,15 @@
 
 // Package middleware provides reusable HTTP middleware for the MinURL service.
 //
-// This file holds the ResponseWriter every middleware in the package wraps a response in;
-// the middlewares themselves live in logging.go, recovery.go and decompress.go.
+// This file holds the ResponseWriter every middleware in the package wraps a response in,
+// and WriteError; the middlewares themselves live in logging.go, recovery.go and decompress.go.
 package middleware
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+)
 
 // unwrapper is what http.ResponseController and huma.SetReadDeadline follow through a
 // wrapping ResponseWriter to reach the connection. net/http declares it unexported as
@@ -64,4 +68,26 @@ func (w *ResponseWriter) Flush() {
 // https://github.com/danielgtaylor/huma/blob/v2.37.3/huma.go#L908-L914
 func (w *ResponseWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
+}
+
+// WriteError answers status with the problem details body huma writes for its own errors,
+// for the responses huma never sees: a recovered panic, and a request the router matches
+// to no operation. Every operation publishes a default ErrorModel response, so a generated
+// client decodes these bodies too.
+//
+// The body comes from huma.NewError and huma's own JSON format, as toHTTPError's does, so
+// both 500s read the same. It lacks only $schema, which huma's response transformer adds
+// and the schema does not require.
+func WriteError(w http.ResponseWriter, status int) {
+	err := huma.NewError(status, http.StatusText(status))
+
+	// A handler that panicked may have set a Content-Length for the body it never sent,
+	// which would cut this one short. http.Error drops it for the same reason.
+	w.Header().Del("Content-Length")
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(err.GetStatus())
+
+	// Only writing to the connection can fail here, after the status is sent: nothing is
+	// left to report to.
+	_ = huma.DefaultJSONFormat.Marshal(w, err)
 }
