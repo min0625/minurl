@@ -61,7 +61,8 @@ type echoIO struct {
 const echoMaxBodyBytes = 1024
 
 // newDecompressTestAPI returns an API behind RequestDecompress with an operation that echoes
-// the body it receives and one that takes no body.
+// the body it receives, after an operation middleware calls humachi.Unwrap on its context,
+// and one that takes no body.
 func newDecompressTestAPI() http.Handler {
 	r := chi.NewRouter()
 	api := humachi.New(r, huma.DefaultConfig("test", "0.0.0"))
@@ -71,6 +72,12 @@ func newDecompressTestAPI() http.Handler {
 		Method:       http.MethodPost,
 		Path:         "/echo",
 		MaxBodyBytes: echoMaxBodyBytes,
+		// An operation middleware gets the context RequestDecompress hands on, and
+		// humachi.Unwrap panics unless that unwraps to humachi's own.
+		Middlewares: huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+			humachi.Unwrap(ctx)
+			next(ctx)
+		}},
 	}, func(_ context.Context, in *echoIO) (*echoIO, error) {
 		return in, nil
 	})
