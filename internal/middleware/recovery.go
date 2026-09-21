@@ -9,7 +9,8 @@ import (
 	"runtime/debug"
 )
 
-// PanicRecovery catches panics in downstream handlers, logs them, and returns 500.
+// PanicRecovery catches panics in downstream handlers, logs them, and answers 500 with
+// an ErrorModel body unless the handler already started its response.
 func PanicRecovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rw := &ResponseWriter{ResponseWriter: w}
@@ -23,11 +24,7 @@ func PanicRecovery(next http.Handler) http.Handler {
 				slog.With(AttrsToAny(attrs)...).ErrorContext(r.Context(), "panic recovered")
 
 				if !rw.WroteHeader {
-					http.Error(
-						rw,
-						http.StatusText(http.StatusInternalServerError),
-						http.StatusInternalServerError,
-					)
+					WriteError(rw, http.StatusInternalServerError)
 				}
 			}
 		}()
