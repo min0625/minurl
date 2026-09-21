@@ -27,9 +27,31 @@ const gzipEncoding = "gzip"
 func gzipBody(t *testing.T, data string) *bytes.Buffer {
 	t.Helper()
 
+	return gzipBodyWithExtra(t, data, nil)
+}
+
+// gzipBodyOfSize gzips data into a body of exactly size bytes, padding it with the gzip
+// header's extra field, which adds nothing to what it decompresses to.
+func gzipBodyOfSize(t *testing.T, data string, size int) *bytes.Buffer {
+	t.Helper()
+
+	// The extra field is a 2-byte length and the data. Not the name field: Go's reader
+	// refuses a name of 512 bytes or more.
+	buf := gzipBodyWithExtra(t, data, make([]byte, size-gzipBody(t, data).Len()-2))
+	if buf.Len() != size {
+		t.Fatalf("gzip body is %d bytes, want %d", buf.Len(), size)
+	}
+
+	return buf
+}
+
+func gzipBodyWithExtra(t *testing.T, data string, extra []byte) *bytes.Buffer {
+	t.Helper()
+
 	var buf bytes.Buffer
 
 	w := gzip.NewWriter(&buf)
+	w.Extra = extra
 
 	_, err := w.Write([]byte(data))
 	if err != nil {
@@ -138,6 +160,31 @@ func TestRequestDecompressMiddleware(t *testing.T) {
 			contentEncoding: gzipEncoding,
 			body:            corruptTrailer(gzipBody(t, strings.Repeat("a", 64*echoMaxBodyBytes))),
 			wantStatus:      http.StatusRequestEntityTooLarge,
+		},
+		{
+			// huma's own limit, which the gzip cases below copy for the body as sent: if a huma
+			// upgrade moves it, these fail and the gzip ones still pass. Spaces pad the JSON.
+			name:       "plain body reaching the limit returns 413",
+			body:       strings.NewReader(payload + strings.Repeat(" ", echoMaxBodyBytes-len(payload))),
+			wantStatus: http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:       "plain body just under the limit passes",
+			body:       strings.NewReader(payload + strings.Repeat(" ", echoMaxBodyBytes-1-len(payload))),
+			wantStatus: http.StatusOK,
+		},
+		{
+			// The same limit as the plain body above, for a gzip body as sent.
+			name:            "body reaching the limit as sent returns 413",
+			contentEncoding: gzipEncoding,
+			body:            gzipBodyOfSize(t, payload, echoMaxBodyBytes),
+			wantStatus:      http.StatusRequestEntityTooLarge,
+		},
+		{
+			name:            "body just under the limit as sent passes",
+			contentEncoding: gzipEncoding,
+			body:            gzipBodyOfSize(t, payload, echoMaxBodyBytes-1),
+			wantStatus:      http.StatusOK,
 		},
 		{
 			// Empty gzip members decompress to nothing, so only the size as sent can refuse them.
