@@ -225,26 +225,28 @@ func TestBuildAPIAnswersUnroutedRequestsWithAnErrorModel(t *testing.T) {
 	}{
 		{method: http.MethodGet, target: "/api/v1/nope", wantStatus: http.StatusNotFound},
 		{method: http.MethodGet, target: "/api/v1/urls/abc/", wantStatus: http.StatusNotFound},
+		// HEAD is listed wherever GET is: GetHead serves it through the GET route.
 		{
 			method:     http.MethodPost,
 			target:     "/api/v1/urls/abc",
 			wantStatus: http.StatusMethodNotAllowed,
-			wantAllow:  []string{"GET"},
+			wantAllow:  []string{"GET", "HEAD"},
 		},
 		{
 			method:     http.MethodDelete,
 			target:     "/api/v1/urls/abc:redirect",
 			wantStatus: http.StatusMethodNotAllowed,
-			wantAllow:  []string{"GET"},
-		},
-		{
-			method:     http.MethodHead,
-			target:     "/api/v1/urls/abc:redirect",
-			wantStatus: http.StatusMethodNotAllowed,
-			wantAllow:  []string{"GET"},
+			wantAllow:  []string{"GET", "HEAD"},
 		},
 		{
 			method:     http.MethodGet,
+			target:     "/api/v1/urls",
+			wantStatus: http.StatusMethodNotAllowed,
+			wantAllow:  []string{"POST"},
+		},
+		// A HEAD is routed as a GET, so a path without GET still refuses it.
+		{
+			method:     http.MethodHead,
 			target:     "/api/v1/urls",
 			wantStatus: http.StatusMethodNotAllowed,
 			wantAllow:  []string{"POST"},
@@ -254,7 +256,7 @@ func TestBuildAPIAnswersUnroutedRequestsWithAnErrorModel(t *testing.T) {
 			method:     "BREW",
 			target:     "/api/v1/urls/abc",
 			wantStatus: http.StatusMethodNotAllowed,
-			wantAllow:  []string{"GET"},
+			wantAllow:  []string{"GET", "HEAD"},
 		},
 		// chi sends such a method to the 405 handler without looking the path up.
 		{method: "BREW", target: "/api/v1/nope", wantStatus: http.StatusNotFound},
@@ -302,6 +304,62 @@ func TestBuildAPIAnswersUnroutedRequestsWithAnErrorModel(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("ErrorModel = %+v, want %+v", got, want)
+			}
+		})
+	}
+}
+
+// TestBuildAPIAnswersHeadLikeGet pins that a HEAD gets the status and headers the GET of
+// the same target gets, errors and huma's own routes included, although huma registers only
+// the GET. net/http drops the body, which a ResponseRecorder cannot show.
+func TestBuildAPIAnswersHeadLikeGet(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		target     string
+		wantStatus int
+	}{
+		{target: "/api/v1/urls/abc", wantStatus: http.StatusOK},
+		{target: "/api/v1/urls/abc:redirect", wantStatus: http.StatusFound},
+		{target: "/api/v1/urls/zzz:redirect", wantStatus: http.StatusNotFound},
+		{target: "/api/v1/urls/bad*id", wantStatus: http.StatusUnprocessableEntity},
+		{target: "/openapi.json", wantStatus: http.StatusOK},
+	}
+
+	svc, err := service.NewShortURLServiceWithAllDependencies(
+		testhelpers.NewStorage(), testhelpers.NewCounter(), nil,
+	)
+	if err != nil {
+		t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
+	}
+
+	entry := service.ShortURL{ID: "abc", OriginalURL: "https://example.com/"}
+	if _, err := svc.Create(t.Context(), entry); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+
+	r, _ := httpserver.BuildAPI(svc, "test")
+
+	for _, tt := range tests {
+		t.Run(tt.target, func(t *testing.T) {
+			t.Parallel()
+
+			serve := func(method string) (int, http.Header) {
+				res := httptest.NewRecorder()
+				r.ServeHTTP(res, httptest.NewRequestWithContext(t.Context(), method, tt.target, nil))
+
+				return res.Code, res.Result().Header
+			}
+
+			getStatus, getHeader := serve(http.MethodGet)
+			headStatus, headHeader := serve(http.MethodHead)
+
+			if headStatus != tt.wantStatus || getStatus != tt.wantStatus {
+				t.Fatalf("status: HEAD %d, GET %d, want %d", headStatus, getStatus, tt.wantStatus)
+			}
+
+			if !reflect.DeepEqual(headHeader, getHeader) {
+				t.Fatalf("HEAD header = %v, GET header = %v", headHeader, getHeader)
 			}
 		})
 	}

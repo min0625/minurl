@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/min0625/minurl/internal/handler"
 	"github.com/min0625/minurl/internal/middleware"
 	"github.com/min0625/minurl/internal/service"
@@ -26,11 +27,16 @@ var allowMethods = []string{
 //
 // A request that matches no operation never reaches huma, so the router answers it with
 // an ErrorModel itself, instead of chi's text/plain 404 and bodiless 405.
+//
+// A HEAD runs the GET handler of its path, so it answers with the GET's status and headers
+// (RFC 9110 §9.3.2) and net/http drops the body. huma never registers the HEAD, so the
+// OpenAPI document lists GET only.
 func NewRouter() *chi.Mux {
 	r := chi.NewRouter()
 	r.Use(middleware.PanicRecovery)
 	r.Use(middleware.RequestLogger)
 	r.Use(middleware.AccessLog)
+	r.Use(chimiddleware.GetHead)
 
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {
 		middleware.WriteError(w, http.StatusNotFound)
@@ -46,7 +52,13 @@ func NewRouter() *chi.Mux {
 		status := http.StatusNotFound
 
 		for _, method := range allowMethods {
-			if r.Match(chi.NewRouteContext(), method, path) {
+			matched := r.Match(chi.NewRouteContext(), method, path)
+			if method == http.MethodHead {
+				// GetHead answers a HEAD through the GET route when no HEAD route exists.
+				matched = matched || r.Match(chi.NewRouteContext(), http.MethodGet, path)
+			}
+
+			if matched {
 				w.Header().Add("Allow", method)
 
 				status = http.StatusMethodNotAllowed
