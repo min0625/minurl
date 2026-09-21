@@ -213,7 +213,7 @@ every status each of these operations returns:
 | `404 Not Found` | get, redirect | The short URL does not exist, has expired, or (redirect only) its stored target breaks the `original_url` rules |
 | `408 Request Timeout` | create | The body, gzip or not, was not received within 5 seconds |
 | `409 Conflict` | create | The requested `id` is already taken |
-| `413 Request Entity Too Large` | create | The body is 1 MiB or larger (a gzip body: once decompressed, or over 1 MiB as sent), or `original_url` is too long for the storage backend |
+| `413 Request Entity Too Large` | create | The body is 1 MiB or larger, as sent or after gzip decompression, or `original_url` is too long for the storage backend |
 | `415 Unsupported Media Type` | create | The `Content-Type` is not JSON, or the `Content-Encoding` is not `gzip` |
 | `422 Unprocessable Entity` | all | The body or `{id}` parses but breaks a schema rule |
 | `500 Internal Server Error` | all | The server failed, e.g. the database is unreachable |

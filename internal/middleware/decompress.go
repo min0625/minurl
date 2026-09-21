@@ -24,9 +24,10 @@ import (
 //
 // Any other encoding is a 415. A gzip body that is corrupt is a 400, and one that stalls past
 // the operation's body read timeout a 408. The operation's MaxBodyBytes applies to the body
-// both as sent and decompressed: over it as sent is a 413 here, and reaching it decompressed
-// is huma's own 413, before the body expands further. So gzip never raises the limit, though
-// for a body that does not compress it lowers it by gzip's overhead.
+// both as sent and decompressed, as huma applies it to a plain body: reaching it as sent is a
+// 413 here, and reaching it decompressed is huma's own 413, before the body expands further.
+// So gzip never raises the limit, though for a body that does not compress it lowers it by
+// gzip's overhead.
 func RequestDecompress(api huma.API) func(huma.Context, func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		op := ctx.Operation()
@@ -73,13 +74,15 @@ func RequestDecompress(api huma.API) func(huma.Context, func(huma.Context)) {
 	}
 }
 
-// readGzip decompresses a gzip body. A positive maxBytes, as huma treats it, limits the body
-// as sent, since a gzip member can take bytes without producing any, and stops the read once
-// it decompresses to maxBytes, where huma answers with its own 413.
+// readGzip decompresses a gzip body. A positive maxBytes, as huma treats it, refuses a body
+// that reaches it as sent, since a gzip member can take bytes without producing any, and stops
+// the read once it decompresses to maxBytes, where huma answers with its own 413.
 func readGzip(body io.Reader, maxBytes int64) ([]byte, error) {
 	if maxBytes > 0 {
-		// No ResponseWriter to flag: only the *http.MaxBytesError is wanted.
-		body = http.MaxBytesReader(nil, io.NopCloser(body), maxBytes)
+		// No ResponseWriter to flag: only the *http.MaxBytesError is wanted. One byte under
+		// maxBytes, since MaxBytesReader accepts a body of exactly its limit and huma does not.
+		// https://github.com/danielgtaylor/huma/blob/v2.37.3/huma.go#L2122-L2130
+		body = http.MaxBytesReader(nil, io.NopCloser(body), maxBytes-1)
 	}
 
 	// Not closed: Close only returns an error the read has already returned.
