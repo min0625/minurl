@@ -202,6 +202,10 @@ Location: https://example.com/very/long/url
 > whose target does not satisfy them returns `404 Not Found`. `GET /api/v1/urls/{id}` still
 > returns it, so the row can be found and fixed.
 
+> Both `GET` endpoints also answer `HEAD`, with the status and headers of the `GET`
+> (`Location` included) and no body, so `curl -I` and link checkers can check a short URL.
+> The OpenAPI document lists only the `GET`.
+
 ### Error Responses
 
 Errors use the `ErrorModel` body (`application/problem+json`), and the OpenAPI document lists

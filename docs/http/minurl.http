@@ -72,6 +72,10 @@ GET {{baseUrl}}/api/v1/urls/{{createShortURL.response.body.$.id}}:redirect HTTP/
 # Using the custom ID from createShortURLWithCustomID request
 GET {{baseUrl}}/api/v1/urls/Min:redirect HTTP/1.1
 
+### Redirect with HEAD (HTTP 302 with Location, no body)
+# What curl -I and link checkers send; every GET endpoint answers HEAD the same way.
+HEAD {{baseUrl}}/api/v1/urls/Min:redirect HTTP/1.1
+
 ### Get short URL with expiry (from createShortURLWithExpiry response)
 GET {{baseUrl}}/api/v1/urls/{{createShortURLWithExpiry.response.body.$.id}} HTTP/1.1
 
@@ -118,5 +122,5 @@ GET {{baseUrl}}/api/v1/urls/zzzzzz HTTP/1.1
 ### Redirect not found example (expected HTTP 404)
 GET {{baseUrl}}/api/v1/urls/zzzzzz:redirect HTTP/1.1
 
-### Method not allowed example (expected HTTP 405, ErrorModel body, Allow: GET)
+### Method not allowed example (expected HTTP 405, ErrorModel body, Allow: GET and HEAD)
 DELETE {{baseUrl}}/api/v1/urls/zzzzzz HTTP/1.1

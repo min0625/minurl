@@ -27,6 +27,9 @@ MinURL is a Go short URL service. The core API is fully implemented — it suppo
   - `deploy/docker-compose/` — Docker Compose examples (`.example.yml`; copy and customize before use)
   - `deploy/kubernetes/` — Kubernetes manifest examples (`.example.yaml`; copy and customize before use)
 - HTTP listen port: `:8888` (default)
+- `HEAD` is answered wherever `GET` is: `NewRouter` uses chi's `middleware.GetHead`, and the
+  rebuilt 405 `Allow` lists `HEAD` next to `GET`. huma never registers the HEAD, so the OpenAPI
+  document lists only the GET
 - Storage backends: SQLite (`sqlite3://`), PostgreSQL (`postgres://`), and MySQL (`mysql://`), auto-detected from DSN scheme
 - Minimum database versions: PostgreSQL 9.5 (`ON CONFLICT`), MySQL **8.0** (the `utf8mb4_0900_as_cs`
   collation on `short_urls.id` — 5.7 fails to start). SQLite is embedded via `modernc.org/sqlite`,
