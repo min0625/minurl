@@ -8,7 +8,6 @@ package handler
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -97,19 +96,6 @@ func registerRedirectRoute(api huma.API, svc service.ShortURLServicer) {
 			entry, err := svc.Get(ctx, input.ID)
 			if err != nil {
 				return nil, err
-			}
-
-			// Entries created before the scheme allowlist existed may hold a
-			// javascript:/data:/file: URL, so refuse to hand one back as a Location.
-			if err := service.IsValidOriginalURL(string(entry.OriginalURL)); err != nil {
-				slog.WarnContext(
-					ctx,
-					"stored original URL is not a valid http(s) URL",
-					"id", input.ID,
-					"error", err,
-				)
-
-				return nil, service.ErrShortURLNotFound
 			}
 
 			return &redirectOutput{Location: string(entry.OriginalURL)}, nil

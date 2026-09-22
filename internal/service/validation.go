@@ -27,8 +27,8 @@ const (
 // IsValidOriginalURL returns nil when rawURL is an absolute http or https URL with a hostname,
 // otherwise returns a descriptive error.
 //
-// Enforced in two places: OriginalURL.Resolve rejects bad input on create, and the redirect
-// handler runs it again because it also serves rows written before this rule existed.
+// Enforced in two places: OriginalURL.Resolve rejects bad input on create, and
+// ShortURLService.Get runs it again because it also reads rows written before this rule existed.
 //
 // It checks safety only, never length: there is deliberately no length limit. Storage
 // limits belong to the store layer — see the CreateIfAbsent comment in mysql.go — and are

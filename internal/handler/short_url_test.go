@@ -895,61 +895,33 @@ func newStoreWithEntry(t *testing.T, id, originalURL string) *testhelpers.Storag
 	return store
 }
 
-func TestRegisterRedirectRouteReturns404ForNonHTTPStoredURL(t *testing.T) {
+// TestRegisterHidesNonHTTPStoredURL pins that a legacy row the create rules would refuse is
+// served by neither endpoint: :redirect must not hand it out as a Location, and GET /{id}
+// must not hand it back either, the same as an expired row.
+func TestRegisterHidesNonHTTPStoredURL(t *testing.T) {
 	t.Parallel()
 
-	r := newAPIWithLegacyEntry(t, "abc123", "javascript:alert(1)")
+	for _, target := range []string{"/api/v1/urls/abc123", "/api/v1/urls/abc123:redirect"} {
+		t.Run(target, func(t *testing.T) {
+			t.Parallel()
 
-	req := httptest.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		"/api/v1/urls/abc123:redirect",
-		nil,
-	)
-	resp := httptest.NewRecorder()
-	r.ServeHTTP(resp, req)
+			r := newAPIWithLegacyEntry(t, "abc123", "javascript:alert(1)")
 
-	if resp.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d", resp.Code, http.StatusNotFound)
-	}
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, target, nil)
+			resp := httptest.NewRecorder()
+			r.ServeHTTP(resp, req)
 
-	if location := resp.Result().Header.Get("Location"); location != "" {
-		t.Fatalf("Location header = %q, want empty", location)
-	}
-}
+			if resp.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want %d (body %s)", resp.Code, http.StatusNotFound, resp.Body.String())
+			}
 
-// TestRegisterGetShortURLReturnsNonHTTPStoredURL pins the asymmetry README documents on
-// purpose: :redirect refuses a legacy non-http(s) row, but GET /{id} still hands it back so
-// the row can be found and fixed. Nothing else stops that promise from being quietly dropped.
-func TestRegisterGetShortURLReturnsNonHTTPStoredURL(t *testing.T) {
-	t.Parallel()
+			if location := resp.Result().Header.Get("Location"); location != "" {
+				t.Fatalf("Location header = %q, want empty", location)
+			}
 
-	const originalURL = "javascript:alert(1)"
-
-	r := newAPIWithLegacyEntry(t, "abc123", originalURL)
-
-	req := httptest.NewRequestWithContext(
-		context.Background(),
-		http.MethodGet,
-		"/api/v1/urls/abc123",
-		nil,
-	)
-	resp := httptest.NewRecorder()
-	r.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", resp.Code, http.StatusOK)
-	}
-
-	var body struct {
-		OriginalURL string `json:"original_url"`
-	}
-
-	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode body %s: %v", resp.Body.String(), err)
-	}
-
-	if body.OriginalURL != originalURL {
-		t.Fatalf("original_url = %q, want %q", body.OriginalURL, originalURL)
+			if strings.Contains(resp.Body.String(), "javascript") {
+				t.Fatalf("404 body leaks the stored URL: %s", resp.Body.String())
+			}
+		})
 	}
 }

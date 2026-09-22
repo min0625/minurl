@@ -198,9 +198,10 @@ Location: https://example.com/very/long/url
 
 > Returns `404 Not Found` if the short URL does not exist or has expired.
 
-> The redirect endpoint applies the same `original_url` rules to stored data, so a short URL
-> whose target does not satisfy them returns `404 Not Found`. `GET /api/v1/urls/{id}` still
-> returns it, so the row can be found and fixed.
+> Both `GET` endpoints apply the same `original_url` rules to stored data, so a short URL
+> whose target does not satisfy them — a row written before those rules existed, or straight
+> to the database — returns `404 Not Found`, as an expired one does. Each such request logs a
+> `WARN` `stored original URL is not a valid http(s) URL` with the row's `id`.
 
 > Both `GET` endpoints also answer `HEAD`, with the status and headers of the `GET`
 > (`Location` included) and no body, so `curl -I` and link checkers can check a short URL.
@@ -214,7 +215,7 @@ every status each of these operations returns:
 | Status | Endpoints | When |
 |--------|-----------|------|
 | `400 Bad Request` | create | The body is missing, is not valid JSON, or is a corrupt gzip stream |
-| `404 Not Found` | get, redirect | The short URL does not exist, has expired, or (redirect only) its stored target breaks the `original_url` rules |
+| `404 Not Found` | get, redirect | The short URL does not exist, has expired, or its stored target breaks the `original_url` rules |
 | `408 Request Timeout` | create | The body, gzip or not, was not received within 5 seconds |
 | `409 Conflict` | create | The requested `id` is already taken |
 | `413 Request Entity Too Large` | create | The body is 1 MiB or larger, as sent or after gzip decompression, or `original_url` is too long for the storage backend |
