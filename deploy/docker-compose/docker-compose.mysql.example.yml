@@ -33,8 +33,7 @@ services:
       #
       # For PRODUCTION (always use encrypted connections):
       #   MINURL_STORAGE_DSN: "mysql://minurl:password@mysql:3306/minurl?tls=true"
-      #   or with a custom CA:
-      #   MINURL_STORAGE_DSN: "mysql://minurl:password@mysql:3306/minurl?tls=custom"
+      #   A private CA is not supported yet: tls=custom (or any other name) is rejected at startup.
       #
       # Consider using .env files or Docker secrets instead of hardcoding credentials.
       MINURL_STORAGE_DSN: "${MINURL_STORAGE_DSN:-mysql://minurl:minurl@mysql:3306/minurl}"

@@ -56,7 +56,8 @@ go run ./cmd/minurl
 | `make docker-run` | Run Docker container |
 
 `make check` runs every hook in `.pre-commit-config.yaml` over all tracked files — the same
-gate `git commit` runs, but repo-wide. Run it before every commit. CI (`make ci`) additionally verifies generated files are in sync.
+gate `git commit` runs, but repo-wide. Run it before every commit; CI (`make ci`) additionally
+verifies generated files are in sync.
 
 ### Make variables
 
@@ -90,7 +91,6 @@ make ci NEW_FROM_REV=origin/main INTEGRATION_TEST=1 VERBOSE=1
 - Add or update tests for every behavior change.
 - Prefer table-driven tests for handler and validation logic.
 - Unit tests use the in-memory fakes in `internal/testhelpers` — no database required.
-- Always run `make check` before submitting — it runs lint and test plus the rest of the hooks.
 
 **PostgreSQL / MySQL integration tests** require Docker:
 
@@ -120,7 +120,7 @@ After any functional change, update **all** of the following that apply:
 
 | File | When to update |
 |------|----------------|
-| `README.md` | API behavior, new fields, new endpoints |
+| `README.md` | API behavior, new fields, new endpoints, configuration options |
 | `docs/http/minurl.http` | New fields or scenarios — add example requests **manually** |
 | `docs/openapi/` | Run `make gen` (auto) |
 | `pkg/kiota/go/gen/` | Run `make gen` (auto) |
