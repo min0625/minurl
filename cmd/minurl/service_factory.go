@@ -128,10 +128,10 @@ func newShortURLServiceFromConfig(
 		if tlsVal := mysqlDSNTLSValue(cfg.StorageDSN); tlsVal == "false" || tlsVal == "" {
 			slog.Warn(
 				"MySQL DSN: TLS is not enabled — connections are unencrypted. " +
-					"Set tls=true (or configure a named custom CA via RegisterTLSConfig) " +
-					"in production. " +
+					"Set tls=true in production. " +
 					"tls=skip-verify encrypts traffic but does not verify the server " +
-					"certificate and should only be used as a last resort.",
+					"certificate and should only be used as a last resort " +
+					"(a private CA is not supported yet).",
 			)
 		}
 

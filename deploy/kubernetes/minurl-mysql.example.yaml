@@ -31,7 +31,8 @@ stringData:
   #
   # For PRODUCTION (always use encrypted connections):
   #   mysql://minurl:password@mysql:3306/minurl?tls=true
-  #   or with skip hostname verification:
+  #   or, as a last resort (e.g. a private CA, not supported yet), encrypted but
+  #   with no certificate verification at all:
   #   mysql://minurl:password@mysql:3306/minurl?tls=skip-verify
   dsn: "mysql://minurl:password@mysql:3306/minurl?tls=true"
 
