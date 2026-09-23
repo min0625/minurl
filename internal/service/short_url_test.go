@@ -3,8 +3,12 @@
 package service_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"log"
+	"log/slog"
 	"math"
 	"regexp"
 	"strings"
@@ -381,6 +385,85 @@ func TestShortURLServiceGetReturnsNotFoundWhenExpired(t *testing.T) {
 
 	if got != nil {
 		t.Fatalf("Get() returned non-nil entry for expired URL")
+	}
+}
+
+// TestShortURLServiceGetHidesInvalidStoredURL covers rows the create rules never saw: written
+// before those rules existed, or straight to the database. Get treats each like an expired
+// row, so neither GET /{id} nor :redirect serves it, and logs a warning naming the id, which
+// is how an operator finds the rows SQL cannot pick out. It swaps the global slog default and
+// so must not call t.Parallel.
+func TestShortURLServiceGetHidesInvalidStoredURL(t *testing.T) {
+	var logs bytes.Buffer
+
+	origLogger, origWriter, origFlags := slog.Default(), log.Writer(), log.Flags()
+
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&logs, nil)))
+	// SetDefault also points the log package at the new handler, and restoring a default
+	// logger does not undo that.
+	t.Cleanup(func() {
+		slog.SetDefault(origLogger)
+		log.SetOutput(origWriter)
+		log.SetFlags(origFlags)
+	})
+
+	tests := []struct {
+		name        string
+		originalURL string
+	}{
+		{name: "javascript", originalURL: "javascript:alert(1)"},
+		{name: "ftp", originalURL: "ftp://example.com/x"},
+		{name: "userinfo", originalURL: "https://www.example.com@evil.example.org/"},
+		{name: "space", originalURL: "https://example.com/a b"},
+		{name: "right-to-left override", originalURL: "https://example.com/\u202egnp.exe"},
+		{name: "zero width non-joiner", originalURL: "https://example.com/a\u200cb"},
+		{name: "replacement character", originalURL: "https://example.com/a\uFFFDb"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logs.Reset()
+
+			store := testhelpers.NewStorage()
+
+			if _, err := store.CreateIfAbsent(context.Background(), service.ShortURL{
+				ID:          customShortURLID,
+				OriginalURL: service.OriginalURL(tt.originalURL),
+				CreateTime:  time.Now().UTC(),
+			}); err != nil {
+				t.Fatalf("CreateIfAbsent() error = %v", err)
+			}
+
+			svc, err := service.NewShortURLServiceWithAllDependencies(store, testhelpers.NewCounter(), nil)
+			if err != nil {
+				t.Fatalf("NewShortURLServiceWithAllDependencies() error = %v", err)
+			}
+
+			got, err := svc.Get(context.Background(), customShortURLID)
+			if !errors.Is(err, service.ErrShortURLNotFound) {
+				t.Fatalf("Get() error = %v, want %v", err, service.ErrShortURLNotFound)
+			}
+
+			if got != nil {
+				t.Fatalf("Get() = %+v, want nil", got)
+			}
+
+			var entry struct {
+				Level string `json:"level"`
+				Msg   string `json:"msg"`
+				ID    string `json:"id"`
+			}
+
+			if err := json.Unmarshal(logs.Bytes(), &entry); err != nil {
+				t.Fatalf("decode log line %q: %v", logs.String(), err)
+			}
+
+			if entry.Level != "WARN" ||
+				entry.Msg != "stored original URL is not a valid http(s) URL" ||
+				entry.ID != customShortURLID {
+				t.Fatalf("log line = %s, want a WARN naming id %q", logs.String(), customShortURLID)
+			}
+		})
 	}
 }
 

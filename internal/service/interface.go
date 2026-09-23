@@ -15,7 +15,8 @@ type ShortURLServicer interface {
 	Create(ctx context.Context, entry ShortURL) (*ShortURL, error)
 
 	// Get retrieves the short URL with the given ID.
-	// Returns ErrShortURLNotFound when the ID is not found or has expired.
+	// Returns ErrShortURLNotFound when the ID is not found, has expired, or its stored
+	// original URL breaks IsValidOriginalURL.
 	Get(ctx context.Context, id string) (*ShortURL, error)
 }
 

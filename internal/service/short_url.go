@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -18,7 +19,8 @@ type ShortURLService struct {
 }
 
 // ErrShortURLNotFound means no short URL is served under an ID: Get returns it when the ID
-// never existed or has expired. A storage failure never wraps it, so the handler keeps
+// never existed, has expired, or holds an original URL that breaks IsValidOriginalURL.
+// A storage failure never wraps it, so the handler keeps
 // answering 500 rather than 404 when the database is the problem.
 var ErrShortURLNotFound = errors.New("short url not found")
 
@@ -109,7 +111,8 @@ func (s *ShortURLService) Create(
 }
 
 // Get retrieves a short URL by ID.
-// Returns ErrShortURLNotFound when the ID is not found or the URL has expired.
+// Returns ErrShortURLNotFound when the ID is not found, the URL has expired, or the stored
+// original URL breaks IsValidOriginalURL.
 func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, error) {
 	entry, ok, err := s.store.GetByID(ctx, id)
 	if err != nil {
@@ -117,6 +120,15 @@ func (s *ShortURLService) Get(ctx context.Context, id string) (*ShortURL, error)
 	}
 
 	if !ok || (entry.ExpireTime != nil && time.Now().After(*entry.ExpireTime)) {
+		return nil, ErrShortURLNotFound
+	}
+
+	// Rows written before the create rules existed, or by anything other than this
+	// service, may hold a javascript: URL, userinfo or an invisible character. Treat such a
+	// row like an expired one rather than serve it; the warning is how an operator finds it.
+	if err := IsValidOriginalURL(string(entry.OriginalURL)); err != nil {
+		slog.WarnContext(ctx, "stored original URL is not a valid http(s) URL", "id", id, "error", err)
+
 		return nil, ErrShortURLNotFound
 	}
 

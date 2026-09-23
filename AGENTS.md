@@ -89,7 +89,7 @@ itself — no hand-written `"body.original_url"` to go stale.
 Two things such a resolver must respect: a value-typed field reaches it as the zero value
 when the key is absent, so return early on empty rather than inventing an error for a
 field nobody sent (a pointer field is skipped instead); and it runs on request input only,
-which is why the redirect handler calls `IsValidOriginalURL` itself for stored rows.
+which is why `ShortURLService.Get` calls `IsValidOriginalURL` itself for stored rows.
 
 **`huma.ValidateStrictCasing` is load-bearing.** huma validates the exact JSON key, but
 `encoding/json` then matches keys case-insensitively and keeps the last one, so without it
@@ -196,6 +196,8 @@ failure: define the error in `service`, add it to `errorResponses` and to the op
   `ErrorModel`.
 
 **Expiry enforcement**: handled in `ShortURLService.Get()` in `internal/service/short_url.go`. The store layer returns raw rows; expiry is checked at the service layer.
+So is a stored `original_url` that breaks `IsValidOriginalURL` (a row older than the create rules):
+`Get` returns `ErrShortURLNotFound` for it, as for an expired row, and logs a WARN with the `id`.
 
 ## Layer Responsibilities
 
