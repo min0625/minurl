@@ -115,13 +115,30 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	cfg.IDSeed = strings.TrimSpace(v.GetString("id-seed"))
 	cfg.StorageDSN = strings.TrimSpace(v.GetString("storage-dsn"))
 	cfg.LogFormat = strings.ToLower(strings.TrimSpace(v.GetString("log-format")))
-	cfg.OTELEnabled = v.GetBool("otel.enabled")
 	cfg.OTELServiceName = strings.TrimSpace(v.GetString("otel.service-name"))
 	cfg.OTELExporter = strings.ToLower(strings.TrimSpace(v.GetString("otel.exporter")))
 	cfg.OTELEndpoint = strings.TrimSpace(v.GetString("otel.endpoint"))
-	cfg.OTELInsecure = v.GetBool("otel.insecure")
-	cfg.DBMaxOpenConns = v.GetInt("db.max-open-conns")
-	cfg.DBMaxIdleConns = v.GetInt("db.max-idle-conns")
+
+	// viper's GetInt / GetBool turn a value they cannot parse into 0 / false without an
+	// error, and both mean something here (no connection limit, no idle connections,
+	// tracing off), so a typo in an env var or config file must fail startup instead.
+	var err error
+
+	if cfg.OTELEnabled, err = parseBoolConfig(v.GetString("otel.enabled"), "otel.enabled"); err != nil {
+		return appConfig{}, err
+	}
+
+	if cfg.OTELInsecure, err = parseBoolConfig(v.GetString("otel.insecure"), "otel.insecure"); err != nil {
+		return appConfig{}, err
+	}
+
+	if cfg.DBMaxOpenConns, err = parseIntConfig(v.GetString("db.max-open-conns"), "db.max-open-conns"); err != nil {
+		return appConfig{}, err
+	}
+
+	if cfg.DBMaxIdleConns, err = parseIntConfig(v.GetString("db.max-idle-conns"), "db.max-idle-conns"); err != nil {
+		return appConfig{}, err
+	}
 
 	dbConnMaxLifetime, err := parseDurationConfig(
 		v.GetString("db.conn-max-lifetime"),
@@ -221,6 +238,32 @@ func parseUint32(raw string) (uint32, error) {
 // parseDurationConfig parses a duration string from configuration.
 // An empty string or "0" returns a zero duration (no limit).
 // Returns an error if the string is not a valid Go duration or is negative.
+// parseIntConfig parses a decimal integer setting. Unlike viper's GetInt it rejects
+// what it cannot parse, and it does not read a leading 0 as octal or 0x as hex.
+func parseIntConfig(raw, key string) (int, error) {
+	raw = strings.TrimSpace(raw)
+
+	n, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, fmt.Errorf("%s: invalid integer %q: %w", key, raw, err)
+	}
+
+	return n, nil
+}
+
+// parseBoolConfig parses a boolean setting with strconv.ParseBool. Unlike viper's
+// GetBool it rejects what it cannot parse instead of returning false.
+func parseBoolConfig(raw, key string) (bool, error) {
+	raw = strings.TrimSpace(raw)
+
+	b, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s: invalid boolean %q (expected true or false): %w", key, raw, err)
+	}
+
+	return b, nil
+}
+
 func parseDurationConfig(raw, key string) (time.Duration, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {

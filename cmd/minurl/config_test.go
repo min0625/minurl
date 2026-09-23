@@ -414,3 +414,84 @@ func TestLoadAppConfigStorageBackendDefaultsSQLite(t *testing.T) {
 		t.Fatalf("detectStorageBackend(%q) = %q, want sqlite", cfg.StorageDSN, backend)
 	}
 }
+
+func TestLoadAppConfigRejectsUnparsableIntAndBoolEnv(t *testing.T) {
+	tests := []struct {
+		env   string
+		value string
+	}{
+		{"MINURL_DB_MAX_OPEN_CONNS", "abc"},
+		{"MINURL_DB_MAX_OPEN_CONNS", "25abc"},
+		{"MINURL_DB_MAX_OPEN_CONNS", "25.9"},
+		{"MINURL_DB_MAX_IDLE_CONNS", "0x5"},
+		{"MINURL_DB_MAX_IDLE_CONNS", "1_000"},
+		{"MINURL_OTEL_ENABLED", "yes"},
+		{"MINURL_OTEL_INSECURE", "abc"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.env+"="+tt.value, func(t *testing.T) {
+			t.Setenv(tt.env, tt.value)
+
+			if _, err := loadAppConfig(newRootCommand(), ""); err == nil {
+				t.Fatal("loadAppConfig() error = nil, want non-nil")
+			}
+		})
+	}
+}
+
+func TestLoadAppConfigRejectsUnparsableIntAndBoolFile(t *testing.T) {
+	t.Parallel()
+
+	for _, line := range []string{
+		"db-max-open-conns: abc",
+		"db-max-idle-conns: ''",
+		"otel-enabled: yes",
+		"otel-insecure: 'on'",
+	} {
+		t.Run(line, func(t *testing.T) {
+			t.Parallel()
+
+			cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+			if err := os.WriteFile(cfgPath, []byte(line+"\n"), 0o600); err != nil {
+				t.Fatalf("write config file: %v", err)
+			}
+
+			if _, err := loadAppConfig(newRootCommand(), cfgPath); err == nil {
+				t.Fatal("loadAppConfig() error = nil, want non-nil")
+			}
+		})
+	}
+}
+
+func TestLoadAppConfigParsesIntAndBoolStrictly(t *testing.T) {
+	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+	if err := os.WriteFile(cfgPath, []byte("db-max-idle-conns: 7\n"), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	// A leading 0 is decimal, not octal, and surrounding space is trimmed.
+	t.Setenv("MINURL_DB_MAX_OPEN_CONNS", " 010 ")
+	t.Setenv("MINURL_OTEL_INSECURE", "TRUE")
+
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.DBMaxOpenConns != 10 {
+		t.Fatalf("DBMaxOpenConns = %d, want 10", cfg.DBMaxOpenConns)
+	}
+
+	if cfg.DBMaxIdleConns != 7 {
+		t.Fatalf("DBMaxIdleConns = %d, want 7", cfg.DBMaxIdleConns)
+	}
+
+	if !cfg.OTELInsecure {
+		t.Fatalf("OTELInsecure = %v, want true", cfg.OTELInsecure)
+	}
+
+	if cfg.OTELEnabled {
+		t.Fatalf("OTELEnabled = %v, want the default false", cfg.OTELEnabled)
+	}
+}
