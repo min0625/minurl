@@ -79,7 +79,7 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().String(
 		"id-seed",
 		"",
-		"seed for deterministic ID key derivation (uint32, decimal or 0x hex)",
+		"seed for deterministic ID key derivation (uint32, e.g. 12345 or 0x3039; a leading 0 is octal: 010 = 8)",
 	)
 	cmd.PersistentFlags().String(
 		"storage-dsn",
@@ -96,12 +96,12 @@ func newRootCommand() *cobra.Command {
 	cmd.PersistentFlags().Int(
 		"db-max-open-conns",
 		25,
-		"max open DB connections, PostgreSQL and MySQL only (0 = unlimited, not recommended)",
+		"max open DB connections, PostgreSQL and MySQL only (0 = unlimited, not recommended; a leading 0 is octal: 010 = 8)",
 	)
 	cmd.PersistentFlags().Int(
 		"db-max-idle-conns",
 		5,
-		"max idle DB connections retained in pool, PostgreSQL and MySQL only (0 = none retained)",
+		"max idle DB connections retained in pool, PostgreSQL and MySQL only (0 = none retained; a leading 0 is octal: 010 = 8)",
 	)
 	cmd.PersistentFlags().String(
 		"db-conn-max-lifetime",

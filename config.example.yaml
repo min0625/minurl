@@ -64,9 +64,10 @@ otel-endpoint: ""
 otel-insecure: true
 
 # Optional deterministic seed for ID generation.
-# Accepted formats:
+# Accepted formats (the same for every integer setting):
 # - decimal: "12345"
 # - hex: "0x3039"
+# A leading 0 means octal: "010" is 8, not 10.
 # Leave empty to use the built-in default seed.
 id-seed: ""
 
