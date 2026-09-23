@@ -229,6 +229,9 @@ minurl healthcheck [--addr http://localhost:8888]
 
 Every option can be set by CLI flag, environment variable, or config file (Cobra + Viper).
 Precedence: **CLI flags > environment variables > config file > built-in defaults**.
+A value that does not parse fails startup rather than falling back to `0` or `false`: the
+`--db-max-*-conns` counts are decimal integers, and booleans take `true` / `false` (or `1` / `0`),
+so `MINURL_DB_MAX_OPEN_CONNS=abc` or `MINURL_OTEL_ENABLED=yes` is an error.
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
