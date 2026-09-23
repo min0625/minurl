@@ -248,13 +248,12 @@ Direct run:
 go run ./cmd/minurl
 ```
 
-## MANDATORY: After Any API or Model Change
+## Required Workflows
 
-See [CONTRIBUTING.md — Mandatory: After Any API or Model Change](CONTRIBUTING.md#mandatory-after-any-api-or-model-change).
-
-## Documentation Checklist
-
-See [CONTRIBUTING.md — Documentation Checklist](CONTRIBUTING.md#documentation-checklist).
+- **After any API or model change**, run `make gen` — see
+  [CONTRIBUTING.md — Mandatory: After Any API or Model Change](CONTRIBUTING.md#mandatory-after-any-api-or-model-change).
+- **After any functional change**, update the docs that apply — see
+  [CONTRIBUTING.md — Documentation Checklist](CONTRIBUTING.md#documentation-checklist).
 
 ## Architecture Direction
 
