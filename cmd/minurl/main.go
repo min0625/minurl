@@ -74,7 +74,7 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "path to configuration file")
+	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "path to a YAML configuration file (.yaml or .yml)")
 	cmd.PersistentFlags().String("http-addr", ":8888", "HTTP listen address")
 	cmd.PersistentFlags().String(
 		"id-seed",

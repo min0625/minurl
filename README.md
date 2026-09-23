@@ -241,9 +241,17 @@ In the config file, an unquoted number is decoded by YAML first. It agrees on `0
 `25.0` is 25 and `1e3` is 1000 there, while `25.9` is still an error. Quote the value (`"010"`)
 to get the env var rules exactly.
 
+The config file must be YAML (`.yaml` or `.yml`). Its keys are the flag names
+without `--`, as in `config.example.yaml` (`db-max-open-conns: 25`), and each takes a single
+value. An unknown key (including a nested `db:` / `  max-open-conns: 25` or a dotted
+`db.max-open-conns`), a key that is not lowercase (`HTTP-Addr`), a list or mapping as a value, or
+a key given twice fails startup, and the error names the line and the key
+(`line 3: unknown key "idseed"`), so a typo cannot silently leave the default in place. A known key left empty (`db-max-open-conns:`) sets nothing. YAML
+anchors and aliases (`&name` / `*name`) work; merge keys (`<<`) do not.
+
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--config` | — | (none) | Path to a configuration file (applies to all commands) |
+| `--config` | — | (none) | Path to a YAML configuration file (`.yaml` or `.yml`); read by the server only, not by `openapi`, `version` or `healthcheck` |
 | `--http-addr` | `MINURL_HTTP_ADDR` | `:8888` | HTTP listen address |
 | `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32 integer, e.g. `12345` or `0x3039`) |
 | `--storage-dsn` | `MINURL_STORAGE_DSN` | `sqlite3://minurl.sqlite3` | Storage DSN — see [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration) |
