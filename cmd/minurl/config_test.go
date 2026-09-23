@@ -423,8 +423,8 @@ func TestLoadAppConfigRejectsUnparsableIntAndBoolEnv(t *testing.T) {
 		{"MINURL_DB_MAX_OPEN_CONNS", "abc"},
 		{"MINURL_DB_MAX_OPEN_CONNS", "25abc"},
 		{"MINURL_DB_MAX_OPEN_CONNS", "25.9"},
-		{"MINURL_DB_MAX_IDLE_CONNS", "0x5"},
-		{"MINURL_DB_MAX_IDLE_CONNS", "1_000"},
+		{"MINURL_DB_MAX_IDLE_CONNS", "08"},
+		{"MINURL_DB_MAX_IDLE_CONNS", "0x"},
 		{"MINURL_OTEL_ENABLED", "yes"},
 		{"MINURL_OTEL_INSECURE", "abc"},
 	}
@@ -466,11 +466,12 @@ func TestLoadAppConfigRejectsUnparsableIntAndBoolFile(t *testing.T) {
 
 func TestLoadAppConfigParsesIntAndBoolStrictly(t *testing.T) {
 	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
-	if err := os.WriteFile(cfgPath, []byte("db-max-idle-conns: 7\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfgPath, []byte("db-max-idle-conns: 010\n"), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	// A leading 0 is decimal, not octal, and surrounding space is trimmed.
+	// A leading 0 is octal in an env var, as the YAML decoder reads it in the config file,
+	// and surrounding space is trimmed.
 	t.Setenv("MINURL_DB_MAX_OPEN_CONNS", " 010 ")
 	t.Setenv("MINURL_OTEL_INSECURE", "TRUE")
 
@@ -479,12 +480,12 @@ func TestLoadAppConfigParsesIntAndBoolStrictly(t *testing.T) {
 		t.Fatalf("loadAppConfig() error = %v", err)
 	}
 
-	if cfg.DBMaxOpenConns != 10 {
-		t.Fatalf("DBMaxOpenConns = %d, want 10", cfg.DBMaxOpenConns)
+	if cfg.DBMaxOpenConns != 8 {
+		t.Fatalf("DBMaxOpenConns = %d, want 8", cfg.DBMaxOpenConns)
 	}
 
-	if cfg.DBMaxIdleConns != 7 {
-		t.Fatalf("DBMaxIdleConns = %d, want 7", cfg.DBMaxIdleConns)
+	if cfg.DBMaxIdleConns != 8 {
+		t.Fatalf("DBMaxIdleConns = %d, want 8", cfg.DBMaxIdleConns)
 	}
 
 	if !cfg.OTELInsecure {
@@ -493,5 +494,51 @@ func TestLoadAppConfigParsesIntAndBoolStrictly(t *testing.T) {
 
 	if cfg.OTELEnabled {
 		t.Fatalf("OTELEnabled = %v, want the default false", cfg.OTELEnabled)
+	}
+}
+
+func TestParseIntegerSettingsAsGoLiterals(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		raw  string
+		want int
+	}{
+		{"0", 0},
+		{"10", 10},
+		{"010", 8},
+		{"0o10", 8},
+		{"0x10", 16},
+		{"0X10", 16},
+		{"0b10", 2},
+		{"1_000", 1000},
+	} {
+		if got, err := parseIntConfig(tt.raw, "key"); err != nil || got != tt.want {
+			t.Errorf("parseIntConfig(%q) = %d, %v, want %d", tt.raw, got, err, tt.want)
+		}
+
+		if got, err := parseUint32(tt.raw); err != nil || int(got) != tt.want {
+			t.Errorf("parseUint32(%q) = %d, %v, want %d", tt.raw, got, err, tt.want)
+		}
+	}
+
+	for _, raw := range []string{"08", "0x", "_1", "1e3", "25.9"} {
+		if _, err := parseIntConfig(raw, "key"); err == nil {
+			t.Errorf("parseIntConfig(%q) error = nil, want non-nil", raw)
+		}
+
+		if _, err := parseUint32(raw); err == nil {
+			t.Errorf("parseUint32(%q) error = nil, want non-nil", raw)
+		}
+	}
+
+	if got, err := parseUint32("0xFFFFFFFF"); err != nil || got != 1<<32-1 {
+		t.Errorf("parseUint32(0xFFFFFFFF) = %d, %v, want %d", got, err, uint32(1<<32-1))
+	}
+
+	for _, raw := range []string{"-1", "4294967296"} {
+		if _, err := parseUint32(raw); err == nil {
+			t.Errorf("parseUint32(%q) error = nil, want non-nil", raw)
+		}
 	}
 }

@@ -229,15 +229,23 @@ minurl healthcheck [--addr http://localhost:8888]
 
 Every option can be set by CLI flag, environment variable, or config file (Cobra + Viper).
 Precedence: **CLI flags > environment variables > config file > built-in defaults**.
-A value that does not parse fails startup rather than falling back to `0` or `false`: the
-`--db-max-*-conns` counts are decimal integers, and booleans take `true` / `false` (or `1` / `0`),
-so `MINURL_DB_MAX_OPEN_CONNS=abc` or `MINURL_OTEL_ENABLED=yes` is an error.
+A value that does not parse fails startup rather than falling back to `0` or `false`, so
+`MINURL_DB_MAX_OPEN_CONNS=abc` or `MINURL_OTEL_ENABLED=yes` is an error. Booleans take
+`true` / `false` (or `1` / `0`). Integers (`--id-seed`, `--db-max-*-conns`) accept
+decimal `25`, hex `0x19`, binary `0b11001`, `_` separators (`1_000`), and octal with `0o` or a
+**leading `0`: `010` is 8, not 10**. `08`, `25.9` and `1e3` are errors. Surrounding
+whitespace in an env var, such as the trailing newline of a Kubernetes Secret, is ignored.
+
+In the config file, an unquoted number is decoded by YAML first. It agrees on `010`, `0x19`,
+`0b11001` and `1_000`, but reads anything else that looks like a number as a float: `08` is 8,
+`25.0` is 25 and `1e3` is 1000 there, while `25.9` is still an error. Quote the value (`"010"`)
+to get the env var rules exactly.
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
 | `--config` | — | (none) | Path to a configuration file (applies to all commands) |
 | `--http-addr` | `MINURL_HTTP_ADDR` | `:8888` | HTTP listen address |
-| `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32, decimal or 0x hex) |
+| `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32 integer, e.g. `12345` or `0x3039`) |
 | `--storage-dsn` | `MINURL_STORAGE_DSN` | `sqlite3://minurl.sqlite3` | Storage DSN — see [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration) |
 | `--log-format` | `MINURL_LOG_FORMAT` | `text` | Log output format — `text` or `json` |
 | `--otel-enabled` | `MINURL_OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |

@@ -222,6 +222,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	return cfg, nil
 }
 
+// parseUint32 parses id-seed with the same Go integer literal rules as parseIntConfig.
 func parseUint32(raw string) (uint32, error) {
 	if raw == "" {
 		return 0, errors.New("empty value")
@@ -235,20 +236,20 @@ func parseUint32(raw string) (uint32, error) {
 	return uint32(v), nil
 }
 
-// parseDurationConfig parses a duration string from configuration.
-// An empty string or "0" returns a zero duration (no limit).
-// Returns an error if the string is not a valid Go duration or is negative.
-// parseIntConfig parses a decimal integer setting. Unlike viper's GetInt it rejects
-// what it cannot parse, and it does not read a leading 0 as octal or 0x as hex.
+// parseIntConfig parses an integer setting as a Go integer literal (base 0): 0x hex, a
+// leading 0 or 0o for octal, 0b binary and _ separators, as v0.0.2 did through viper's
+// GetInt. Unlike GetInt it rejects what it cannot parse (08, 25.9, 1e3) instead of
+// returning 0. An unquoted number in the config file reaches it already decoded by YAML,
+// which agrees on 010 and 0x10 but reads 08, 25.0 and 1e3 as floats (8, 25, 1000).
 func parseIntConfig(raw, key string) (int, error) {
 	raw = strings.TrimSpace(raw)
 
-	n, err := strconv.Atoi(raw)
+	n, err := strconv.ParseInt(raw, 0, strconv.IntSize)
 	if err != nil {
 		return 0, fmt.Errorf("%s: invalid integer %q: %w", key, raw, err)
 	}
 
-	return n, nil
+	return int(n), nil
 }
 
 // parseBoolConfig parses a boolean setting with strconv.ParseBool. Unlike viper's
@@ -264,6 +265,9 @@ func parseBoolConfig(raw, key string) (bool, error) {
 	return b, nil
 }
 
+// parseDurationConfig parses a duration string from configuration.
+// An empty string or "0" returns a zero duration (no limit).
+// Returns an error if the string is not a valid Go duration or is negative.
 func parseDurationConfig(raw, key string) (time.Duration, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
