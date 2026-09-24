@@ -46,6 +46,21 @@ MinURL is a Go short URL service. The core API is fully implemented — it suppo
 - Log format: `text` (default) or `json`, controlled via `--log-format` / `MINURL_LOG_FORMAT`
 - OpenTelemetry: opt-in tracing via `--otel-enabled`; supports `stdout` and `otlp` exporters
 - Configuration precedence: CLI flags > env vars > config file > defaults
+- The config file is read once (`readConfigFile` in `cmd/minurl/config.go`) and must be `.yaml`
+  or `.yml`. A setting has one name everywhere: `configKeys` holds the flag names
+  (`db-max-open-conns`), which are also the viper keys, the config file keys and, through the
+  `-` → `_` replacer, the env vars. `checkConfigFileKeys` fails startup on an unknown key (even a
+  null one; a nested `db: {max-open-conns: …}` or dotted `db.max-open-conns` key is unknown), a
+  key that is not lowercase (viper would fold `ID-Seed` into `id-seed`), a list or mapping as a
+  value, a key given twice, or a merge key (`<<`). A new setting needs a `configKeys` entry, a
+  flag of the same name and a read in `loadAppConfig`; do not give it a dotted name, which viper
+  reads from a nested file key
+- Keep a new setting's env var clear of the ones Kubernetes injects for every Service in the
+  namespace (`<SVC>_SERVICE_HOST`, `<SVC>_SERVICE_PORT`, `<SVC>_PORT`, `<SVC>_PORT_<n>_TCP…`): no
+  name ending in `-port`, `-service-host` or `-service-port`, or holding `-port-<n>-`, or a Service
+  named `minurl-db` would set `MINURL_DB_PORT=tcp://…`, which outranks the config file. For the
+  same reason an unknown `MINURL_*` env var is ignored, not rejected: the examples' Service
+  `minurl` injects `MINURL_SERVICE_HOST`, `MINURL_PORT` and more
 
 ## Domain Model: ShortURL
 

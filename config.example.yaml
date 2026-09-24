@@ -1,6 +1,8 @@
 # MinURL configuration example
 # Usage:
 #   go run ./cmd/minurl --config config.example.yaml
+# The file must be YAML (.yaml or .yml); its keys are the flag names without --.
+# An unknown key fails startup, so a typo cannot silently leave the default.
 
 # HTTP listen address.
 # Default: ":8888"

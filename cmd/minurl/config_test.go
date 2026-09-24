@@ -6,7 +6,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/min0625/minurl/internal/service"
 )
@@ -74,30 +76,6 @@ func TestLoadAppConfigRejectsInvalidLogFormat(t *testing.T) {
 
 	if _, err := loadAppConfig(cmd, ""); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil")
-	}
-}
-
-func TestLoadAppConfigReadsHyphenatedOTelConfigKeys(t *testing.T) {
-	cfgPath := filepath.Join(t.TempDir(), "otel.yaml")
-	content := []byte("http-addr: ':7000'\notel-enabled: true\notel-exporter: stdout\n")
-
-	if err := os.WriteFile(cfgPath, content, 0o600); err != nil {
-		t.Fatalf("write config file: %v", err)
-	}
-
-	cmd := newRootCommand()
-
-	cfg, err := loadAppConfig(cmd, cfgPath)
-	if err != nil {
-		t.Fatalf("loadAppConfig() error = %v", err)
-	}
-
-	if !cfg.OTELEnabled {
-		t.Fatalf("OTELEnabled = %v, want true", cfg.OTELEnabled)
-	}
-
-	if cfg.OTELExporter != "stdout" {
-		t.Fatalf("OTELExporter = %q, want %q", cfg.OTELExporter, "stdout")
 	}
 }
 
@@ -540,5 +518,152 @@ func TestParseIntegerSettingsAsGoLiterals(t *testing.T) {
 		if _, err := parseUint32(raw); err == nil {
 			t.Errorf("parseUint32(%q) error = nil, want non-nil", raw)
 		}
+	}
+}
+
+func TestLoadAppConfigRejectsInvalidConfigFileKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct{ name, file, content, want string }{
+		{"unknown key", "minurl.yaml", "idseed: 5\n", `line 1: unknown key "idseed"`},
+		{"unknown null key", "minurl.yaml", "idseed:\n", `line 1: unknown key "idseed"`},
+		{"unknown flat key", "minurl.yaml", "db-max-open-con: 5\n", `line 1: unknown key "db-max-open-con"`},
+		{
+			"nested key", "minurl.yaml", "http-addr: ':80'\ndb:\n  max-open-conns: 5\n",
+			`line 2: unknown key "db" (settings are flat keys, such as db-max-open-conns)`,
+		},
+		{"null section", "minurl.yaml", "otel:\n", `line 1: unknown key "otel" (settings are flat keys, such as otel-enabled)`},
+		{"section as a value", "minurl.yaml", "otel: true\n", `line 1: unknown key "otel" (settings are flat keys, such as otel-enabled)`},
+		{
+			"dotted key", "minurl.yaml", "db.max-open-conns: 5\n",
+			`unknown key "db.max-open-conns" (settings are flat keys, such as db-max-open-conns)`,
+		},
+		{"flag that is not a setting", "minurl.yaml", "config: other.yaml\n", `line 1: unknown key "config"`},
+		{"every problem", "minurl.yaml", "idseed: 5\nfoo: 1\n", `line 2: unknown key "foo"`},
+		{"merge key", "minurl.yaml", "<<: {log-format: json}\n", "line 1: merge keys (<<) are not supported"},
+		{"quoted <<", "minurl.yaml", "\"<<\": 1\n", `line 1: unknown key "<<"`},
+		{"mapping value", "minurl.yaml", "db-max-open-conns:\n  foo: 1\n", "line 1: db-max-open-conns takes a single value"},
+		{"list value", "minurl.yaml", "http-addr: [':80']\n", "line 1: http-addr takes a single value"},
+		{"given twice", "minurl.yaml", "id-seed: 1\nid-seed: 2\n", "line 2: id-seed is already set on line 1"},
+		{"uppercase", "minurl.yaml", "HTTP-Addr: ':80'\n", `line 1: unknown key "HTTP-Addr" (keys are lowercase: http-addr)`},
+		// viper folds casings into one key, so a null ID-SEED: would replace the value.
+		{
+			"uppercase null after the key", "minurl.yaml", "id-seed: 1\nID-SEED:\n",
+			`line 2: unknown key "ID-SEED" (keys are lowercase: id-seed)`,
+		},
+		{"uppercase section", "minurl.yaml", "OTEL:\n", `line 1: unknown key "OTEL" (settings are flat keys, such as otel-enabled)`},
+		{"JSON", "minurl.json", `{"id-seed": 5}`, "must be YAML (.yaml or .yml)"},
+		{"TOML", "minurl.toml", "id-seed = 5\n", "must be YAML (.yaml or .yml)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfgPath := filepath.Join(t.TempDir(), tc.file)
+			if err := os.WriteFile(cfgPath, []byte(tc.content), 0o600); err != nil {
+				t.Fatalf("write config file: %v", err)
+			}
+
+			_, err := loadAppConfig(newRootCommand(), cfgPath)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("loadAppConfig() error = %v, want one containing %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadAppConfigReadsEveryConfigFileKey(t *testing.T) {
+	t.Parallel()
+
+	// Every value differs from its default, so a key that is accepted but not read fails.
+	want := appConfig{
+		HTTPAddr:          ":9090",
+		IDSeed:            "5",
+		StorageDSN:        "sqlite3://file.sqlite3",
+		LogFormat:         "json",
+		OTELEnabled:       true,
+		OTELServiceName:   "svc",
+		OTELExporter:      "otlp",
+		OTELEndpoint:      "collector:4317",
+		OTELInsecure:      false,
+		DBMaxOpenConns:    7,
+		DBMaxIdleConns:    3,
+		DBConnMaxLifetime: time.Minute,
+		DBConnMaxIdleTime: 2 * time.Minute,
+	}
+	top := "http-addr: ':9090'\nid-seed: 5\nstorage-dsn: sqlite3://file.sqlite3\nlog-format: json\n"
+
+	for _, tc := range []struct{ name, file, content string }{
+		{".yml", "minurl.yml", top + `otel-enabled: true
+otel-service-name: svc
+otel-exporter: otlp
+otel-endpoint: collector:4317
+otel-insecure: false
+db-max-open-conns: 7
+db-max-idle-conns: 3
+db-conn-max-lifetime: 1m
+db-conn-max-idle-time: 2m
+`},
+		// JSON is YAML, so a .json file from v0.0.2 works renamed to .yaml.
+		{"JSON renamed", "minurl.yaml", `{
+	"http-addr": ":9090", "id-seed": 5, "storage-dsn": "sqlite3://file.sqlite3", "log-format": "json",
+	"otel-enabled": true, "otel-service-name": "svc", "otel-exporter": "otlp",
+	"otel-endpoint": "collector:4317", "otel-insecure": false,
+	"db-max-open-conns": 7, "db-max-idle-conns": 3,
+	"db-conn-max-lifetime": "1m", "db-conn-max-idle-time": "2m"
+}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			cfgPath := filepath.Join(t.TempDir(), tc.file)
+			if err := os.WriteFile(cfgPath, []byte(tc.content), 0o600); err != nil {
+				t.Fatalf("write config file: %v", err)
+			}
+
+			cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+			if err != nil {
+				t.Fatalf("loadAppConfig() error = %v", err)
+			}
+
+			if cfg != want {
+				t.Fatalf("loadAppConfig() = %+v, want %+v", cfg, want)
+			}
+		})
+	}
+}
+
+func TestLoadAppConfigIgnoresNullConfigFileKeys(t *testing.T) {
+	t.Parallel()
+
+	for _, content := range []string{
+		"",
+		"http-addr:\ndb-max-open-conns:\notel-enabled:\n",
+		"http-addr: &n\ndb-max-open-conns: *n\n",
+	} {
+		t.Run(content, func(t *testing.T) {
+			t.Parallel()
+
+			cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+			if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+				t.Fatalf("write config file: %v", err)
+			}
+
+			cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+			if err != nil {
+				t.Fatalf("loadAppConfig() error = %v", err)
+			}
+
+			if want := defaultAppConfig(); cfg != want {
+				t.Fatalf("loadAppConfig() = %+v, want the defaults %+v", cfg, want)
+			}
+		})
+	}
+}
+
+func TestLoadAppConfigReadsConfigExample(t *testing.T) {
+	t.Parallel()
+
+	if _, err := loadAppConfig(newRootCommand(), "../../config.example.yaml"); err != nil {
+		t.Fatalf("loadAppConfig(config.example.yaml) error = %v", err)
 	}
 }
