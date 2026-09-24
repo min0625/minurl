@@ -667,3 +667,51 @@ func TestLoadAppConfigReadsConfigExample(t *testing.T) {
 		t.Fatalf("loadAppConfig(config.example.yaml) error = %v", err)
 	}
 }
+
+func TestLoadAppConfigParsesDurationsStrictly(t *testing.T) {
+	for _, tt := range []struct {
+		value   string
+		want    time.Duration
+		wantErr bool
+	}{
+		{"0", 0, false},
+		{" 45s\n", 45 * time.Second, false},
+		// A blank value used to mean 0, no limit; integers and booleans reject it.
+		{" ", 0, true},
+		{"abc", 0, true},
+		{"-1m", 0, true},
+	} {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv("MINURL_DB_CONN_MAX_LIFETIME", tt.value)
+
+			cfg, err := loadAppConfig(newRootCommand(), "")
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "db-conn-max-lifetime") {
+					t.Fatalf("loadAppConfig() error = %v, want one naming db-conn-max-lifetime", err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("loadAppConfig() error = %v", err)
+			}
+
+			if cfg.DBConnMaxLifetime != tt.want {
+				t.Fatalf("DBConnMaxLifetime = %v, want %v", cfg.DBConnMaxLifetime, tt.want)
+			}
+		})
+	}
+
+	t.Run("blank in the config file", func(t *testing.T) {
+		cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+		if err := os.WriteFile(cfgPath, []byte("db-conn-max-idle-time: ''\n"), 0o600); err != nil {
+			t.Fatalf("write config file: %v", err)
+		}
+
+		_, err := loadAppConfig(newRootCommand(), cfgPath)
+		if err == nil || !strings.Contains(err.Error(), `db-conn-max-idle-time: invalid duration ""`) {
+			t.Fatalf("loadAppConfig() error = %v, want an invalid duration error", err)
+		}
+	})
+}

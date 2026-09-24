@@ -233,8 +233,10 @@ A value that does not parse fails startup rather than falling back to `0` or `fa
 `MINURL_DB_MAX_OPEN_CONNS=abc` or `MINURL_OTEL_ENABLED=yes` is an error. Booleans take
 `true` / `false` (or `1` / `0`). Integers (`--id-seed`, `--db-max-*-conns`) accept
 decimal `25`, hex `0x19`, binary `0b11001`, `_` separators (`1_000`), and octal with `0o` or a
-**leading `0`: `010` is 8, not 10**. `08`, `25.9` and `1e3` are errors. Surrounding
-whitespace in an env var, such as the trailing newline of a Kubernetes Secret, is ignored.
+**leading `0`: `010` is 8, not 10**. `08`, `25.9` and `1e3` are errors. Durations
+(`--db-conn-max-*`) are Go durations such as `30m` or `1h30m`; `0` means no limit. A blank value
+is an error for every one of these settings. Surrounding whitespace in an env var, such as the
+trailing newline of a Kubernetes Secret, is ignored.
 
 In the config file, an unquoted number is decoded by YAML first. It agrees on `010`, `0x19`,
 `0b11001` and `1_000`, but reads anything else that looks like a number as a float: `08` is 8,
