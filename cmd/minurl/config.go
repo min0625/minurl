@@ -362,14 +362,11 @@ func parseBoolConfig(raw, key string) (bool, error) {
 	return b, nil
 }
 
-// parseDurationConfig parses a duration string from configuration.
-// An empty string or "0" returns a zero duration (no limit).
-// Returns an error if the string is not a valid Go duration or is negative.
+// parseDurationConfig parses a duration setting as a Go duration string. "0" is a zero
+// duration (no limit); a blank value is an error, as it is for integers and booleans, rather
+// than a silent 0.
 func parseDurationConfig(raw, key string) (time.Duration, error) {
 	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return 0, nil
-	}
 
 	d, err := time.ParseDuration(raw)
 	if err != nil {
