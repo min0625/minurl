@@ -553,7 +553,7 @@ expiry, and the `404` / `405` / `422` error cases.
 │   │   ├── main.go
 │   │   ├── config.go              # Configuration loading (Viper)
 │   │   ├── config_bind.go         # Flag/env binding helpers
-│   │   ├── server.go              # HTTP server startup and routing
+│   │   ├── server.go              # HTTP server startup and graceful shutdown
 │   │   ├── service_factory.go     # Storage backend detection and service wiring
 │   │   ├── command_healthcheck.go
 │   │   ├── command_openapi.go
@@ -561,6 +561,8 @@ expiry, and the `404` / `405` / `422` error cases.
 │   └── minurl-client-example/     # Example Kiota-generated Go client usage
 │       └── main.go
 ├── docs/
+│   ├── design/
+│   │   └── http-api.md            # Request validation and error response design
 │   ├── http/
 │   │   └── minurl.http            # REST Client debug request examples
 │   └── openapi/
@@ -568,7 +570,7 @@ expiry, and the `404` / `405` / `422` error cases.
 │       └── openapi.yaml
 ├── internal/
 │   ├── handler/                   # HTTP route handlers
-│   ├── httpserver/                # HTTP server lifecycle
+│   ├── httpserver/                # Router, huma API and OpenAPI document assembly
 │   ├── middleware/                # HTTP middleware (logging, recovery, decompression)
 │   ├── service/                   # Business logic
 │   ├── store/                     # Persistence (SQLite, PostgreSQL, MySQL)
