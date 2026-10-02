@@ -227,7 +227,7 @@ minurl healthcheck [--addr http://localhost:8888]
 
 ## Configuration
 
-Every option can be set by CLI flag, environment variable, or config file (Cobra + Viper).
+Every option can be set by CLI flag, environment variable, or config file.
 Precedence: **CLI flags > environment variables > config file > built-in defaults**.
 A value that does not parse fails startup rather than falling back to `0` or `false`, so
 `MINURL_DB_MAX_OPEN_CONNS=abc` or `MINURL_OTEL_ENABLED=yes` is an error. Booleans take
@@ -240,18 +240,17 @@ duration, pool size or boolean (`''` in the config file, only whitespace in an e
 var (`MINURL_DB_CONN_MAX_LIFETIME=`) counts as unset. Surrounding whitespace in an env var, such
 as the trailing newline of a Kubernetes Secret, is ignored.
 
-In the config file, an unquoted number is decoded by YAML first. It agrees on `010`, `0x19`,
-`0b11001` and `1_000`, but reads anything else that looks like a number as a float: `08` is 8,
-`25.0` is 25 and `1e3` is 1000 there, while `25.9` is still an error. Quote the value (`"010"`)
-to get the env var rules exactly.
+A config file value is read as written, with the same rules as a flag or env var: `08`, `25.0`
+and `1e3` are errors there too, and a string setting written `010` stays `010`.
 
 The config file must be YAML (`.yaml` or `.yml`). Its keys are the flag names
 without `--`, as in `config.example.yaml` (`db-max-open-conns: 25`), and each takes a single
 value. An unknown key (including a nested `db:` / `  max-open-conns: 25` or a dotted
 `db.max-open-conns`), a key that is not lowercase (`HTTP-Addr`), a list or mapping as a value, or
 a key given twice fails startup, and the error names the line and the key
-(`line 3: unknown key "idseed"`), so a typo cannot silently leave the default in place. A known key left empty (`db-max-open-conns:`) sets nothing. YAML
-anchors and aliases (`&name` / `*name`) work; merge keys (`<<`) do not.
+(`line 3: unknown key "idseed"`), so a typo cannot silently leave the default in place. A known
+key left empty (`db-max-open-conns:`) sets nothing. YAML anchors and aliases (`&name` / `*name`)
+work; merge keys (`<<`) do not.
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
@@ -401,8 +400,8 @@ Connection pool settings apply to the **PostgreSQL and MySQL backends**. SQLite 
 
 **Tuning guidelines**:
 - Typical production PostgreSQL: the defaults above
-- High-concurrency (many parallel requests): increase `max-open-conns` proportionally to your DB's `max_connections` and number of service instances
-- Set `conn-max-lifetime` to avoid connections being closed by the DB server's idle timeout
+- High-concurrency (many parallel requests): increase `db-max-open-conns` proportionally to your DB's `max_connections` and number of service instances
+- Set `db-conn-max-lifetime` to avoid connections being closed by the DB server's idle timeout
 
 ### Database migrations
 
@@ -555,8 +554,7 @@ expiry, and the `404` / `405` / `422` error cases.
 ├── cmd/
 │   ├── minurl/                    # Main entry point and wiring
 │   │   ├── main.go
-│   │   ├── config.go              # Configuration loading (Viper)
-│   │   ├── config_bind.go         # Flag/env binding helpers
+│   │   ├── config.go              # Configuration loading
 │   │   ├── server.go              # HTTP server startup and graceful shutdown
 │   │   ├── service_factory.go     # Storage backend detection and service wiring
 │   │   ├── command_healthcheck.go

@@ -56,7 +56,7 @@ func newRootCommand() *cobra.Command {
 				return err
 			}
 
-			cfg, err := loadAppConfig(cmd, opts.configPath)
+			cfg, err := loadAppConfig(cmd, opts.configPath, os.LookupEnv)
 			if err != nil {
 				return err
 			}
