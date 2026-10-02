@@ -6,8 +6,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,7 +17,7 @@ import (
 
 	"github.com/min0625/minurl/internal/telemetry"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	"github.com/spf13/pflag"
 	yaml "go.yaml.in/yaml/v3"
 )
 
@@ -26,22 +28,16 @@ const (
 	logFormatJSON    = "json"
 )
 
-// configKeys lists every setting. Each is a flag name, its MINURL_* env var and its config file key.
-var configKeys = []string{
-	"http-addr",
-	"id-seed",
-	"storage-dsn",
-	"log-format",
-	"otel-enabled",
-	"otel-service-name",
-	"otel-exporter",
-	"otel-endpoint",
-	"otel-insecure",
-	"db-max-open-conns",
-	"db-max-idle-conns",
-	"db-conn-max-lifetime",
-	"db-conn-max-idle-time",
-}
+// configKeys lists every setting: the yaml tags of configFile, in order. Each is a flag name, its
+// MINURL_* env var and its config file key; the flag's default is the setting's default.
+var configKeys = func() []string {
+	var keys []string
+	for field := range reflect.TypeFor[configFile]().Fields() {
+		keys = append(keys, field.Tag.Get("yaml"))
+	}
+
+	return keys
+}()
 
 type appConfig struct {
 	HTTPAddr        string
@@ -61,87 +57,47 @@ type appConfig struct {
 	DBConnMaxIdleTime time.Duration
 }
 
-func defaultAppConfig() appConfig {
-	return appConfig{
-		HTTPAddr:        ":8888",
-		StorageDSN:      defaultSQLiteDSN,
-		LogFormat:       logFormatText,
-		OTELEnabled:     false,
-		OTELServiceName: appName,
-		OTELExporter:    telemetry.ExporterStdout,
-		OTELEndpoint:    "",
-		OTELInsecure:    true,
-		// PostgreSQL connection pool defaults.
-		// SQLite always uses 1 connection; these values are ignored for SQLite.
-		DBMaxOpenConns:    25,
-		DBMaxIdleConns:    5,
-		DBConnMaxLifetime: 30 * time.Minute,
-		DBConnMaxIdleTime: 10 * time.Minute,
-	}
-}
-
-func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
-	cfg := defaultAppConfig()
-
-	v := viper.New()
-	v.SetEnvPrefix("MINURL")
-	v.SetEnvKeyReplacer(strings.NewReplacer("-", "_"))
-	v.AutomaticEnv()
-
-	v.SetDefault("http-addr", cfg.HTTPAddr)
-	v.SetDefault("storage-dsn", cfg.StorageDSN)
-	v.SetDefault("log-format", cfg.LogFormat)
-	v.SetDefault("otel-enabled", cfg.OTELEnabled)
-	v.SetDefault("otel-service-name", cfg.OTELServiceName)
-	v.SetDefault("otel-exporter", cfg.OTELExporter)
-	v.SetDefault("otel-endpoint", cfg.OTELEndpoint)
-	v.SetDefault("otel-insecure", cfg.OTELInsecure)
-	v.SetDefault("db-max-open-conns", cfg.DBMaxOpenConns)
-	v.SetDefault("db-max-idle-conns", cfg.DBMaxIdleConns)
-	v.SetDefault("db-conn-max-lifetime", cfg.DBConnMaxLifetime.String())
-	v.SetDefault("db-conn-max-idle-time", cfg.DBConnMaxIdleTime.String())
-
-	if err := bindConfigFlags(v, cmd); err != nil {
+// loadAppConfig reads every setting and checks it. lookupEnv is os.LookupEnv outside tests.
+func loadAppConfig(
+	cmd *cobra.Command,
+	configPath string,
+	lookupEnv func(string) (string, bool),
+) (appConfig, error) {
+	values, err := settingValues(cmd, configPath, lookupEnv)
+	if err != nil {
 		return appConfig{}, err
 	}
 
-	if configPath != "" {
-		if err := readConfigFile(v, configPath); err != nil {
-			return appConfig{}, err
-		}
-	}
+	var cfg appConfig
 
-	cfg.HTTPAddr = v.GetString("http-addr")
-	cfg.IDSeed = strings.TrimSpace(v.GetString("id-seed"))
-	cfg.StorageDSN = strings.TrimSpace(v.GetString("storage-dsn"))
-	cfg.LogFormat = strings.ToLower(strings.TrimSpace(v.GetString("log-format")))
-	cfg.OTELServiceName = strings.TrimSpace(v.GetString("otel-service-name"))
-	cfg.OTELExporter = strings.ToLower(strings.TrimSpace(v.GetString("otel-exporter")))
-	cfg.OTELEndpoint = strings.TrimSpace(v.GetString("otel-endpoint"))
+	cfg.HTTPAddr = strings.TrimSpace(values["http-addr"])
+	cfg.IDSeed = strings.TrimSpace(values["id-seed"])
+	cfg.StorageDSN = strings.TrimSpace(values["storage-dsn"])
+	cfg.LogFormat = strings.ToLower(strings.TrimSpace(values["log-format"]))
+	cfg.OTELServiceName = strings.TrimSpace(values["otel-service-name"])
+	cfg.OTELExporter = strings.ToLower(strings.TrimSpace(values["otel-exporter"]))
+	cfg.OTELEndpoint = strings.TrimSpace(values["otel-endpoint"])
 
-	// viper's GetInt / GetBool turn a value they cannot parse into 0 / false without an
-	// error, and both mean something here (no connection limit, no idle connections,
-	// tracing off), so a typo in an env var or config file must fail startup instead.
-	var err error
-
-	if cfg.OTELEnabled, err = parseBoolConfig(v.GetString("otel-enabled"), "otel-enabled"); err != nil {
+	// A value that does not parse fails startup instead of becoming 0 / false, which mean
+	// something here (no connection limit, no idle connections, tracing off).
+	if cfg.OTELEnabled, err = parseBoolConfig(values["otel-enabled"], "otel-enabled"); err != nil {
 		return appConfig{}, err
 	}
 
-	if cfg.OTELInsecure, err = parseBoolConfig(v.GetString("otel-insecure"), "otel-insecure"); err != nil {
+	if cfg.OTELInsecure, err = parseBoolConfig(values["otel-insecure"], "otel-insecure"); err != nil {
 		return appConfig{}, err
 	}
 
-	if cfg.DBMaxOpenConns, err = parseIntConfig(v.GetString("db-max-open-conns"), "db-max-open-conns"); err != nil {
+	if cfg.DBMaxOpenConns, err = parseIntConfig(values["db-max-open-conns"], "db-max-open-conns"); err != nil {
 		return appConfig{}, err
 	}
 
-	if cfg.DBMaxIdleConns, err = parseIntConfig(v.GetString("db-max-idle-conns"), "db-max-idle-conns"); err != nil {
+	if cfg.DBMaxIdleConns, err = parseIntConfig(values["db-max-idle-conns"], "db-max-idle-conns"); err != nil {
 		return appConfig{}, err
 	}
 
 	dbConnMaxLifetime, err := parseDurationConfig(
-		v.GetString("db-conn-max-lifetime"),
+		values["db-conn-max-lifetime"],
 		"db-conn-max-lifetime",
 	)
 	if err != nil {
@@ -149,7 +105,7 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	}
 
 	dbConnMaxIdleTime, err := parseDurationConfig(
-		v.GetString("db-conn-max-idle-time"),
+		values["db-conn-max-idle-time"],
 		"db-conn-max-idle-time",
 	)
 	if err != nil {
@@ -216,107 +172,213 @@ func loadAppConfig(cmd *cobra.Command, configPath string) (appConfig, error) {
 	}
 
 	if cfg.OTELServiceName == "" {
-		cfg.OTELServiceName = "minurl"
+		cfg.OTELServiceName = appName
 	}
 
 	return cfg, nil
 }
 
-// readConfigFile reads the config file once, checks its keys, and hands the same bytes to
-// v, so the file that is checked is the file that is loaded.
-func readConfigFile(v *viper.Viper, configPath string) error {
+// settingValues returns the text of every setting, from the first source that sets it.
+func settingValues(
+	cmd *cobra.Command,
+	configPath string,
+	lookupEnv func(string) (string, bool),
+) (map[string]string, error) {
+	var file map[string]string
+
+	if configPath != "" {
+		var err error
+		if file, err = readConfigFile(configPath); err != nil {
+			return nil, err
+		}
+	}
+
+	values := make(map[string]string, len(configKeys))
+
+	for _, key := range configKeys {
+		f := cmd.Flag(key)
+		if f == nil {
+			return nil, fmt.Errorf("lookup flag %q: not found", key)
+		}
+
+		values[key] = setting(f, lookupEnv, file)
+	}
+
+	return values, nil
+}
+
+// setting returns a setting's value from the first source that sets it: the flag given on the
+// command line, its MINURL_* env var, the config file, then the flag's default. An empty env var
+// is unset, as it was in v0.0.2. One holding only whitespace is a value, which loadAppConfig
+// trims to "": that fails startup for storage-dsn (rather than quietly starting on SQLite),
+// http-addr, the pool sizes, booleans and durations, for otel-exporter when tracing is on and
+// for otel-endpoint when the exporter is otlp, and means the default for id-seed, log-format and
+// otel-service-name, as a blank value does in any source.
+func setting(f *pflag.Flag, lookupEnv func(string) (string, bool), file map[string]string) string {
+	if f.Changed {
+		return f.Value.String()
+	}
+
+	env := "MINURL_" + strings.ToUpper(strings.ReplaceAll(f.Name, "-", "_"))
+	if v, ok := lookupEnv(env); ok && v != "" {
+		return v
+	}
+
+	if v, ok := file[f.Name]; ok {
+		return v
+	}
+
+	return f.DefValue
+}
+
+// readConfigFile reads the settings in a YAML config file.
+func readConfigFile(configPath string) (map[string]string, error) {
 	if ext := filepath.Ext(configPath); ext != ".yaml" && ext != ".yml" {
-		return fmt.Errorf("config file %q: must be YAML (.yaml or .yml)", configPath)
+		return nil, fmt.Errorf("config file %q: must be YAML (.yaml or .yml)", configPath)
 	}
 
 	raw, err := os.ReadFile(configPath) //nolint:gosec // the operator names the file with --config
 	if err != nil {
-		return fmt.Errorf("read config file %q: %w", configPath, err)
+		return nil, fmt.Errorf("read config file %q: %w", configPath, err)
 	}
 
-	if err := checkConfigFileKeys(raw); err != nil {
-		return fmt.Errorf("config file %q: %w", configPath, err)
+	values, err := configFileValues(raw)
+	if err != nil {
+		return nil, fmt.Errorf("config file %q: %w", configPath, err)
 	}
 
-	v.SetConfigType("yaml")
-
-	if err := v.ReadConfig(bytes.NewReader(raw)); err != nil {
-		return fmt.Errorf("read config file %q: %w", configPath, err)
-	}
-
-	return nil
+	return values, nil
 }
 
-// checkConfigFileKeys fails on a config file key that is not a setting, so a typo (idseed,
-// db-max-open-con) fails startup instead of leaving the default in place. A key is a flag
-// name without "--" (db-max-open-conns); a nested key (db: {max-open-conns: 25}) or a dotted
-// one (db.max-open-conns), which viper reads as the same nested key, is unknown. An unknown
-// key is rejected even when null, and so is a list or mapping where a setting takes one
-// value. Keys are lowercase: viper matches them case-insensitively, so ID-Seed would read
-// as id-seed and a null ID-SEED: would replace id-seed: 1. A key given twice is rejected, as
-// the YAML node tree does not catch it. A merge key (<<) is rejected too: viper expands it,
-// and the check would have to do the same.
-func checkConfigFileKeys(raw []byte) error {
+// configFile holds one *string field per setting, its yaml tag the setting's name (configKeys is
+// built from these tags): the value as written in the config file, so it is read with the same
+// rules as a flag or env var (08 and 1e3 are not integers, a string setting written 010 stays
+// 010), or nil when the key is absent or null.
+type configFile struct {
+	HTTPAddr          *string `yaml:"http-addr"`
+	IDSeed            *string `yaml:"id-seed"`
+	StorageDSN        *string `yaml:"storage-dsn"`
+	LogFormat         *string `yaml:"log-format"`
+	OTELEnabled       *string `yaml:"otel-enabled"`
+	OTELServiceName   *string `yaml:"otel-service-name"`
+	OTELExporter      *string `yaml:"otel-exporter"`
+	OTELEndpoint      *string `yaml:"otel-endpoint"`
+	OTELInsecure      *string `yaml:"otel-insecure"`
+	DBMaxOpenConns    *string `yaml:"db-max-open-conns"`
+	DBMaxIdleConns    *string `yaml:"db-max-idle-conns"`
+	DBConnMaxLifetime *string `yaml:"db-conn-max-lifetime"`
+	DBConnMaxIdleTime *string `yaml:"db-conn-max-idle-time"`
+}
+
+// configFileValues returns the settings in a config file. settingProblems checks the top-level
+// keys as written; yaml.v3's strict decoding then rejects a key given twice and checks what an
+// alias or a merge key (<<) brings in, in its own words. minurl also requires one YAML document,
+// as the decoder would otherwise drop a second one unread, typos and syntax errors included.
+func configFileValues(raw []byte) (map[string]string, error) {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return err
+		return nil, err
 	}
 
-	// An empty file sets nothing; a document that is not a mapping is viper's to report.
-	if len(doc.Content) == 0 || doc.Content[0].Kind != yaml.MappingNode {
+	if len(doc.Content) > 0 {
+		if problems := settingProblems(doc.Content[0]); len(problems) > 0 {
+			return nil, errors.New(strings.Join(problems, "; "))
+		}
+	}
+
+	dec := yaml.NewDecoder(bytes.NewReader(raw))
+	dec.KnownFields(true)
+
+	var file configFile
+	if err := dec.Decode(&file); err != nil && !errors.Is(err, io.EOF) {
+		if typeErr, ok := errors.AsType[*yaml.TypeError](err); ok {
+			return nil, errors.New(strings.Join(typeErr.Errors, "; "))
+		}
+
+		return nil, err
+	}
+
+	// A trailing --- with nothing after it is a null document and sets nothing.
+	for {
+		var next yaml.Node
+
+		err := dec.Decode(&next)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return nil, err
+		}
+
+		if len(next.Content) > 0 && next.Content[0].Tag != "!!null" {
+			return nil, fmt.Errorf("line %d: only one YAML document is allowed", next.Line)
+		}
+	}
+
+	values := make(map[string]string, len(configKeys))
+
+	for field, value := range reflect.ValueOf(file).Fields() {
+		if !value.IsNil() {
+			values[field.Tag.Get("yaml")] = value.Elem().String()
+		}
+	}
+
+	return values, nil
+}
+
+// settingProblems checks a config file's top-level keys as written, in minurl's words: each is
+// a setting (yaml.v3 says "field idseed not found in type main.configFile", and skips a null key
+// such as ~ instead of rejecting it), takes a single value, and has no tag of an application's
+// own (!secret), which yaml.v3 would drop, leaving the text after it as the value. An alias key,
+// a merge key (<<) and a list or mapping as a key are left to yaml.v3, which resolves them.
+func settingProblems(root *yaml.Node) []string {
+	switch {
+	case root.Kind == yaml.ScalarNode && root.Tag == "!!null":
 		return nil
+	case root.Kind != yaml.MappingNode:
+		return []string{fmt.Sprintf("line %d: the config file must hold key: value settings", root.Line)}
 	}
 
 	var problems []string
 
-	seen := make(map[string]int, len(configKeys))
-	root := doc.Content[0]
-
 	for i := 0; i+1 < len(root.Content); i += 2 {
 		key, value := root.Content[i], root.Content[i+1]
-		name := key.Value
 
-		switch line, repeated := seen[name]; {
-		case !slices.Contains(configKeys, name):
-			problems = append(problems, fmt.Sprintf("line %d: %s", key.Line, unknownKey(key)))
-		case repeated:
-			problems = append(problems, fmt.Sprintf("line %d: %s is already set on line %d", key.Line, name, line))
-		default:
-			seen[name] = key.Line
-
-			if value.Kind == yaml.MappingNode || value.Kind == yaml.SequenceNode {
-				problems = append(problems, fmt.Sprintf("line %d: %s takes a single value", key.Line, name))
-			}
+		switch {
+		case key.Kind != yaml.ScalarNode, key.Tag == "!!merge":
+		case !slices.Contains(configKeys, key.Value):
+			problems = append(problems, fmt.Sprintf("line %d: %s", key.Line, unknownKey(key.Value)))
+		case value.Kind == yaml.MappingNode || value.Kind == yaml.SequenceNode:
+			problems = append(problems, fmt.Sprintf("line %d: %s takes a single value", key.Line, key.Value))
+		case strings.HasPrefix(value.Tag, "!") && !strings.HasPrefix(value.Tag, "!!"):
+			problems = append(
+				problems,
+				fmt.Sprintf("line %d: %s: tag %s is not supported", key.Line, key.Value, value.Tag),
+			)
 		}
 	}
 
-	if len(problems) > 0 {
-		return errors.New(strings.Join(problems, "; "))
-	}
-
-	return nil
+	return problems
 }
 
-// unknownKey describes a config file key that is not a setting.
-func unknownKey(key *yaml.Node) string {
-	if key.Tag == "!!merge" {
-		return "merge keys (<<) are not supported; write the keys out"
-	}
-
-	lower := strings.ToLower(key.Value)
+// unknownKey describes a config file key that is not a setting, naming the setting meant when
+// the key is one in another casing (ID-Seed) or in the nested or dotted form v0.0.2 also read
+// (otel: {enabled: true}, db.max-open-conns).
+func unknownKey(name string) string {
+	lower := strings.ToLower(name)
 	if slices.Contains(configKeys, lower) {
-		return fmt.Sprintf("unknown key %q (keys are lowercase: %s)", key.Value, lower)
+		return fmt.Sprintf("unknown key %q (keys are lowercase: %s)", name, lower)
 	}
 
-	// otel: {enabled: true} and db.max-open-conns look like settings, so name one that is.
 	flat := strings.ReplaceAll(lower, ".", "-")
 	for _, setting := range configKeys {
 		if setting == flat || strings.HasPrefix(setting, flat+"-") {
-			return fmt.Sprintf("unknown key %q (settings are flat keys, such as %s)", key.Value, setting)
+			return fmt.Sprintf("unknown key %q (settings are flat keys, such as %s)", name, setting)
 		}
 	}
 
-	return fmt.Sprintf("unknown key %q", key.Value)
+	return fmt.Sprintf("unknown key %q", name)
 }
 
 // parseUint32 parses id-seed with the same Go integer literal rules as parseIntConfig.
@@ -336,8 +398,7 @@ func parseUint32(raw string) (uint32, error) {
 // parseIntConfig parses an integer setting as a Go integer literal (base 0): 0x hex, a
 // leading 0 or 0o for octal, 0b binary and _ separators, as v0.0.2 did through viper's
 // GetInt. Unlike GetInt it rejects what it cannot parse (08, 25.9, 1e3) instead of
-// returning 0. An unquoted number in the config file reaches it already decoded by YAML,
-// which agrees on 010 and 0x10 but reads 08, 25.0 and 1e3 as floats (8, 25, 1000).
+// returning 0.
 func parseIntConfig(raw, key string) (int, error) {
 	raw = strings.TrimSpace(raw)
 
@@ -349,8 +410,8 @@ func parseIntConfig(raw, key string) (int, error) {
 	return int(n), nil
 }
 
-// parseBoolConfig parses a boolean setting with strconv.ParseBool. Unlike viper's
-// GetBool it rejects what it cannot parse instead of returning false.
+// parseBoolConfig parses a boolean setting with strconv.ParseBool. Unlike v0.0.2, which
+// read it through viper's GetBool, it rejects what it cannot parse instead of returning false.
 func parseBoolConfig(raw, key string) (bool, error) {
 	raw = strings.TrimSpace(raw)
 

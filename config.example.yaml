@@ -79,7 +79,7 @@ id-seed: ""
 #
 # Recommended values for a typical production PostgreSQL deployment:
 #   db-max-open-conns: 25   (increase for high-concurrency workloads)
-#   db-max-idle-conns: 5    (roughly 20% of max-open-conns)
+#   db-max-idle-conns: 5    (roughly 20% of db-max-open-conns)
 #   db-conn-max-lifetime: 30m
 #   db-conn-max-idle-time: 10m
 #
@@ -89,7 +89,7 @@ id-seed: ""
 #   db-conn-max-lifetime: 15m
 #   db-conn-max-idle-time: 5m
 #
-# Setting max-open-conns to 0 means unlimited (not recommended for PostgreSQL).
+# Setting db-max-open-conns to 0 means unlimited (not recommended for PostgreSQL).
 # Setting lifetime/idle-time to 0 means no limit.
 db-max-open-conns: 25
 db-max-idle-conns: 5

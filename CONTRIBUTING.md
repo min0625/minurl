@@ -170,16 +170,23 @@ Background: [HTTP API design — Error responses](docs/design/http-api.md#error-
 
 ## Adding a New Setting
 
-A setting has one name everywhere: its `configKeys` entry in `cmd/minurl/config.go` is the flag
-name (`db-max-open-conns`), which is also the viper key, the config file key and, through the
-`-` → `_` replacer, the env var (`MINURL_DB_MAX_OPEN_CONNS`). The config file is read once
-(`readConfigFile`), and `checkConfigFileKeys` fails startup on an unknown key (even a null one;
-a nested `db: {max-open-conns: …}` or dotted `db.max-open-conns` key is unknown), a key that is
-not lowercase (viper would fold `ID-Seed` into `id-seed`), a list or mapping as a value, a key
-given twice, or a merge key (`<<`).
+A setting has one name everywhere: the `yaml` tag of its `configFile` field in
+`cmd/minurl/config.go` (`configKeys` lists these tags) is the flag name (`db-max-open-conns`),
+which is also the config file key and, with `-` → `_` and a `MINURL_` prefix, the env var
+(`MINURL_DB_MAX_OPEN_CONNS`). Its default is written once, on the flag; when `loadAppConfig` also
+needs it (a blank value meaning the default), both use the same constant.
+`setting` takes the value from the first source that sets it: a flag given on the command
+line, a non-empty env var, the config file, then the flag's default. `configFileValues` decodes
+the file into `configFile`, one `*string` field per setting so each value is read as written,
+with yaml.v3's `KnownFields(true)`. Before that, `settingProblems` checks the top-level keys as
+written: each must be a setting (`unknown key "otel" (settings are flat keys, such as
+otel-enabled)`; yaml.v3 names a Go type instead, and skips a null key such as `~`), take a
+single value, and carry no tag of another tool's own (`!secret`, which yaml.v3 would drop). A
+key given twice, and what an alias or a merge key (`<<`) brings in, are yaml.v3's to check, in
+its words; minurl does not re-implement them. minurl also requires one YAML document.
 
-1. Add a `configKeys` entry, a flag of the same name and a read in `loadAppConfig`. Do not give
-   it a dotted name, which viper reads from a nested file key.
+1. Add a `*string` field to `configFile` with the setting's name as its `yaml` tag, a flag of the
+   same name with its default, and a read of `values["<name>"]` in `loadAppConfig`.
 2. Keep its env var clear of the ones Kubernetes injects for every Service in the namespace
    (`<SVC>_SERVICE_HOST`, `<SVC>_SERVICE_PORT`, `<SVC>_PORT`, `<SVC>_PORT_<n>_TCP…`): no name
    ending in `-port`, `-service-host` or `-service-port`, or holding `-port-<n>-`, or a Service
