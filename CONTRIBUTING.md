@@ -171,15 +171,16 @@ Background: [HTTP API design — Error responses](docs/design/http-api.md#error-
 ## Adding a New Setting
 
 A setting has one name everywhere: its `configKeys` entry in `cmd/minurl/config.go` is the flag
-name (`db-max-open-conns`), which is also the viper key, the config file key and, through the
-`-` → `_` replacer, the env var (`MINURL_DB_MAX_OPEN_CONNS`). The config file is read once
-(`readConfigFile`), and `checkConfigFileKeys` fails startup on an unknown key (even a null one;
-a nested `db: {max-open-conns: …}` or dotted `db.max-open-conns` key is unknown), a key that is
-not lowercase (viper would fold `ID-Seed` into `id-seed`), a list or mapping as a value, a key
-given twice, or a merge key (`<<`).
+name (`db-max-open-conns`), which is also the config file key and, with `-` → `_` and a `MINURL_`
+prefix, the env var (`MINURL_DB_MAX_OPEN_CONNS`). Its default is the flag's default, and nowhere
+else. `setting` takes the value from the first source that sets it: a flag given on the command
+line, a non-empty env var, the config file, then the flag's default. `configFileValues` reads
+each file value as written (YAML does not decode it first) and fails startup on an unknown key
+(even a null one; a nested `db: {max-open-conns: …}`, dotted `db.max-open-conns` or non-lowercase
+key is unknown), a list or mapping as a value, a key given twice, or a merge key (`<<`).
 
-1. Add a `configKeys` entry, a flag of the same name and a read in `loadAppConfig`. Do not give
-   it a dotted name, which viper reads from a nested file key.
+1. Add a `configKeys` entry, a flag of the same name with its default, and a read of
+   `values["<name>"]` in `loadAppConfig`.
 2. Keep its env var clear of the ones Kubernetes injects for every Service in the namespace
    (`<SVC>_SERVICE_HOST`, `<SVC>_SERVICE_PORT`, `<SVC>_PORT`, `<SVC>_PORT_<n>_TCP…`): no name
    ending in `-port`, `-service-host` or `-service-port`, or holding `-port-<n>-`, or a Service
