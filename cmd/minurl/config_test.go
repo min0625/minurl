@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -13,7 +14,68 @@ import (
 	"github.com/min0625/minurl/internal/service"
 )
 
+// noEnv stands in for os.LookupEnv, so a MINURL_* var in the shell running the tests cannot
+// change their result.
+func noEnv(string) (string, bool) { return "", false }
+
+func envOf(vars map[string]string) func(string) (string, bool) {
+	return func(name string) (string, bool) {
+		v, ok := vars[name]
+
+		return v, ok
+	}
+}
+
+// defaultConfig is every setting's default, as the README's configuration tables list them.
+// The flags in main.go are the only place a default is written.
+var defaultConfig = appConfig{
+	HTTPAddr:          ":8888",
+	StorageDSN:        "sqlite3://minurl.sqlite3",
+	LogFormat:         "text",
+	OTELServiceName:   "minurl",
+	OTELExporter:      "stdout",
+	OTELInsecure:      true,
+	DBMaxOpenConns:    25,
+	DBMaxIdleConns:    5,
+	DBConnMaxLifetime: 30 * time.Minute,
+	DBConnMaxIdleTime: 10 * time.Minute,
+}
+
+func TestLoadAppConfigDefaults(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := loadAppConfig(newRootCommand(), "", noEnv)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg != defaultConfig {
+		t.Fatalf("loadAppConfig() = %+v, want %+v", cfg, defaultConfig)
+	}
+}
+
+func TestLoadAppConfigTrimsHTTPAddr(t *testing.T) {
+	t.Parallel()
+
+	// The trailing newline of a Secret mounted as an env var is ignored, as for every setting.
+	cfg, err := loadAppConfig(newRootCommand(), "", envOf(map[string]string{"MINURL_HTTP_ADDR": " :9000\n"}))
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.HTTPAddr != ":9000" {
+		t.Fatalf("HTTPAddr = %q, want %q", cfg.HTTPAddr, ":9000")
+	}
+
+	_, err = loadAppConfig(newRootCommand(), "", envOf(map[string]string{"MINURL_HTTP_ADDR": " "}))
+	if err == nil || !strings.Contains(err.Error(), "http-addr must not be empty") {
+		t.Fatalf("loadAppConfig() error = %v, want http-addr must not be empty", err)
+	}
+}
+
 func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
+	t.Parallel()
+
 	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
 	content := []byte(
 		"http-addr: ':7000'\nid-seed: '11'\nstorage-dsn: 'sqlite3://from-file.sqlite3'\n",
@@ -23,9 +85,11 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	t.Setenv("MINURL_HTTP_ADDR", ":8000")
-	t.Setenv("MINURL_ID_SEED", "22")
-	t.Setenv("MINURL_STORAGE_DSN", "sqlite3://from-env.sqlite3")
+	env := envOf(map[string]string{
+		"MINURL_HTTP_ADDR":   ":8000",
+		"MINURL_ID_SEED":     "22",
+		"MINURL_STORAGE_DSN": "sqlite3://from-env.sqlite3",
+	})
 
 	cmd := newRootCommand()
 	if err := cmd.PersistentFlags().Set("http-addr", ":9000"); err != nil {
@@ -44,7 +108,7 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 		t.Fatalf("set log-format flag: %v", err)
 	}
 
-	cfg, err := loadAppConfig(cmd, cfgPath)
+	cfg, err := loadAppConfig(cmd, cfgPath, env)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v", err)
 	}
@@ -64,6 +128,16 @@ func TestLoadAppConfigPrecedenceFlagOverEnvOverFile(t *testing.T) {
 	if cfg.LogFormat != "json" {
 		t.Fatalf("LogFormat = %q, want %q", cfg.LogFormat, "json")
 	}
+
+	// Without the flags, the env vars win over the file.
+	cfg, err = loadAppConfig(newRootCommand(), cfgPath, env)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.HTTPAddr != ":8000" || cfg.IDSeed != "22" {
+		t.Fatalf("HTTPAddr, IDSeed = %q, %q, want the env values", cfg.HTTPAddr, cfg.IDSeed)
+	}
 }
 
 func TestLoadAppConfigRejectsInvalidLogFormat(t *testing.T) {
@@ -74,12 +148,14 @@ func TestLoadAppConfigRejectsInvalidLogFormat(t *testing.T) {
 		t.Fatalf("set log-format flag: %v", err)
 	}
 
-	if _, err := loadAppConfig(cmd, ""); err == nil {
+	if _, err := loadAppConfig(cmd, "", noEnv); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil")
 	}
 }
 
 func TestLoadAppConfigOTelEnvOverridesFile(t *testing.T) {
+	t.Parallel()
+
 	cfgPath := filepath.Join(t.TempDir(), "otel-env.yaml")
 	content := []byte(
 		"http-addr: ':7000'\notel-enabled: false\notel-exporter: stdout\notel-endpoint: http://file:4318\n",
@@ -89,13 +165,13 @@ func TestLoadAppConfigOTelEnvOverridesFile(t *testing.T) {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	t.Setenv("MINURL_OTEL_ENABLED", "true")
-	t.Setenv("MINURL_OTEL_EXPORTER", "otlp")
-	t.Setenv("MINURL_OTEL_ENDPOINT", "http://env:4318")
+	env := envOf(map[string]string{
+		"MINURL_OTEL_ENABLED":  "true",
+		"MINURL_OTEL_EXPORTER": "otlp",
+		"MINURL_OTEL_ENDPOINT": "http://env:4318",
+	})
 
-	cmd := newRootCommand()
-
-	cfg, err := loadAppConfig(cmd, cfgPath)
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath, env)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v", err)
 	}
@@ -125,7 +201,7 @@ func TestLoadAppConfigSkipsOTelValidationWhenDisabled(t *testing.T) {
 		t.Fatalf("set otel-exporter flag: %v", err)
 	}
 
-	if _, err := loadAppConfig(cmd, ""); err != nil {
+	if _, err := loadAppConfig(cmd, "", noEnv); err != nil {
 		t.Fatalf("loadAppConfig() error = %v, want nil", err)
 	}
 }
@@ -138,7 +214,7 @@ func TestLoadAppConfigRejectsInvalidSeed(t *testing.T) {
 		t.Fatalf("set id-seed flag: %v", err)
 	}
 
-	if _, err := loadAppConfig(cmd, ""); err == nil {
+	if _, err := loadAppConfig(cmd, "", noEnv); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil")
 	}
 }
@@ -229,7 +305,7 @@ func TestLoadAppConfigRejectsEmptyStorageDSN(t *testing.T) {
 		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
-	if _, err := loadAppConfig(cmd, ""); err == nil {
+	if _, err := loadAppConfig(cmd, "", noEnv); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil for empty storage-dsn")
 	}
 }
@@ -304,7 +380,7 @@ func TestLoadAppConfigRejectsInvalidStorageBackend(t *testing.T) {
 		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
-	if _, err := loadAppConfig(cmd, ""); err == nil {
+	if _, err := loadAppConfig(cmd, "", noEnv); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil for unknown DSN scheme")
 	}
 }
@@ -318,7 +394,7 @@ func TestLoadAppConfigRejectsPostgresWithoutDSN(t *testing.T) {
 		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
-	if _, err := loadAppConfig(cmd, ""); err == nil {
+	if _, err := loadAppConfig(cmd, "", noEnv); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil for empty storage-dsn")
 	}
 }
@@ -332,7 +408,7 @@ func TestLoadAppConfigAcceptsPostgresWithDSN(t *testing.T) {
 		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
-	cfg, err := loadAppConfig(cmd, "")
+	cfg, err := loadAppConfig(cmd, "", noEnv)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v, want nil", err)
 	}
@@ -355,7 +431,7 @@ func TestLoadAppConfigAcceptsMySQLWithDSN(t *testing.T) {
 		t.Fatalf("set storage-dsn flag: %v", err)
 	}
 
-	cfg, err := loadAppConfig(cmd, "")
+	cfg, err := loadAppConfig(cmd, "", noEnv)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v, want nil", err)
 	}
@@ -374,7 +450,7 @@ func TestLoadAppConfigStorageBackendDefaultsSQLite(t *testing.T) {
 
 	cmd := newRootCommand()
 
-	cfg, err := loadAppConfig(cmd, "")
+	cfg, err := loadAppConfig(cmd, "", noEnv)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v", err)
 	}
@@ -394,6 +470,8 @@ func TestLoadAppConfigStorageBackendDefaultsSQLite(t *testing.T) {
 }
 
 func TestLoadAppConfigRejectsUnparsableIntAndBoolEnv(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		env   string
 		value string
@@ -405,13 +483,17 @@ func TestLoadAppConfigRejectsUnparsableIntAndBoolEnv(t *testing.T) {
 		{"MINURL_DB_MAX_IDLE_CONNS", "0x"},
 		{"MINURL_OTEL_ENABLED", "yes"},
 		{"MINURL_OTEL_INSECURE", "abc"},
+		// Only whitespace is a value, unlike an empty env var.
+		{"MINURL_DB_MAX_OPEN_CONNS", " "},
+		{"MINURL_OTEL_INSECURE", "\t"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.env+"="+tt.value, func(t *testing.T) {
-			t.Setenv(tt.env, tt.value)
+			t.Parallel()
 
-			if _, err := loadAppConfig(newRootCommand(), ""); err == nil {
+			env := envOf(map[string]string{tt.env: tt.value})
+			if _, err := loadAppConfig(newRootCommand(), "", env); err == nil {
 				t.Fatal("loadAppConfig() error = nil, want non-nil")
 			}
 		})
@@ -426,6 +508,12 @@ func TestLoadAppConfigRejectsUnparsableIntAndBoolFile(t *testing.T) {
 		"db-max-idle-conns: ''",
 		"otel-enabled: yes",
 		"otel-insecure: 'on'",
+		// The file is read as written, not decoded by YAML first, which would read these
+		// as the floats 8, 25 and 1000.
+		"db-max-open-conns: 08",
+		"db-max-open-conns: 25.0",
+		"db-max-open-conns: 1e3",
+		"id-seed: 1e3",
 	} {
 		t.Run(line, func(t *testing.T) {
 			t.Parallel()
@@ -435,7 +523,7 @@ func TestLoadAppConfigRejectsUnparsableIntAndBoolFile(t *testing.T) {
 				t.Fatalf("write config file: %v", err)
 			}
 
-			if _, err := loadAppConfig(newRootCommand(), cfgPath); err == nil {
+			if _, err := loadAppConfig(newRootCommand(), cfgPath, noEnv); err == nil {
 				t.Fatal("loadAppConfig() error = nil, want non-nil")
 			}
 		})
@@ -443,17 +531,21 @@ func TestLoadAppConfigRejectsUnparsableIntAndBoolFile(t *testing.T) {
 }
 
 func TestLoadAppConfigParsesIntAndBoolStrictly(t *testing.T) {
+	t.Parallel()
+
 	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
 	if err := os.WriteFile(cfgPath, []byte("db-max-idle-conns: 010\n"), 0o600); err != nil {
 		t.Fatalf("write config file: %v", err)
 	}
 
-	// A leading 0 is octal in an env var, as the YAML decoder reads it in the config file,
-	// and surrounding space is trimmed.
-	t.Setenv("MINURL_DB_MAX_OPEN_CONNS", " 010 ")
-	t.Setenv("MINURL_OTEL_INSECURE", "TRUE")
+	// A leading 0 is octal in an env var as in the config file, and surrounding space is
+	// trimmed.
+	env := envOf(map[string]string{
+		"MINURL_DB_MAX_OPEN_CONNS": " 010 ",
+		"MINURL_OTEL_INSECURE":     "TRUE",
+	})
 
-	cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath, env)
 	if err != nil {
 		t.Fatalf("loadAppConfig() error = %v", err)
 	}
@@ -524,36 +616,57 @@ func TestParseIntegerSettingsAsGoLiterals(t *testing.T) {
 func TestLoadAppConfigRejectsInvalidConfigFileKeys(t *testing.T) {
 	t.Parallel()
 
+	// minurl checks the top-level keys as written and names the setting meant where it can;
+	// yaml.v3 reports a key given twice and what an alias or a merge key brings in.
+	unknown := func(key string) string { return `unknown key "` + key + `"` }
+	library := func(key string) string { return "field " + key + " not found in type main.configFile" }
+	flat := func(key, setting string) string {
+		return unknown(key) + " (settings are flat keys, such as " + setting + ")"
+	}
+
 	for _, tc := range []struct{ name, file, content, want string }{
-		{"unknown key", "minurl.yaml", "idseed: 5\n", `line 1: unknown key "idseed"`},
-		{"unknown null key", "minurl.yaml", "idseed:\n", `line 1: unknown key "idseed"`},
-		{"unknown flat key", "minurl.yaml", "db-max-open-con: 5\n", `line 1: unknown key "db-max-open-con"`},
-		{
-			"nested key", "minurl.yaml", "http-addr: ':80'\ndb:\n  max-open-conns: 5\n",
-			`line 2: unknown key "db" (settings are flat keys, such as db-max-open-conns)`,
-		},
-		{"null section", "minurl.yaml", "otel:\n", `line 1: unknown key "otel" (settings are flat keys, such as otel-enabled)`},
-		{"section as a value", "minurl.yaml", "otel: true\n", `line 1: unknown key "otel" (settings are flat keys, such as otel-enabled)`},
-		{
-			"dotted key", "minurl.yaml", "db.max-open-conns: 5\n",
-			`unknown key "db.max-open-conns" (settings are flat keys, such as db-max-open-conns)`,
-		},
-		{"flag that is not a setting", "minurl.yaml", "config: other.yaml\n", `line 1: unknown key "config"`},
-		{"every problem", "minurl.yaml", "idseed: 5\nfoo: 1\n", `line 2: unknown key "foo"`},
-		{"merge key", "minurl.yaml", "<<: {log-format: json}\n", "line 1: merge keys (<<) are not supported"},
-		{"quoted <<", "minurl.yaml", "\"<<\": 1\n", `line 1: unknown key "<<"`},
+		{"unknown key", "minurl.yaml", "idseed: 5\n", "line 1: " + unknown("idseed")},
+		{"unknown null key", "minurl.yaml", "idseed:\n", "line 1: " + unknown("idseed")},
+		{"unknown flat key", "minurl.yaml", "db-max-open-con: 5\n", "line 1: " + unknown("db-max-open-con")},
+		// v0.0.2 read the nested form, so the error names a flat key to use.
+		{"nested key", "minurl.yaml", "http-addr: ':80'\ndb:\n  max-open-conns: 5\n", "line 2: " + flat("db", "db-max-open-conns")},
+		{"null section", "minurl.yaml", "otel:\n", "line 1: " + flat("otel", "otel-enabled")},
+		{"section as a value", "minurl.yaml", "otel: true\n", "line 1: " + flat("otel", "otel-enabled")},
+		{"dotted key", "minurl.yaml", "db.max-open-conns: 5\n", "line 1: " + flat("db.max-open-conns", "db-max-open-conns")},
+		{"flag that is not a setting", "minurl.yaml", "config: other.yaml\n", "line 1: " + unknown("config")},
+		{"every problem", "minurl.yaml", "idseed: 5\nfoo: 1\n", "line 1: " + unknown("idseed") + "; line 2: " + unknown("foo")},
+		{"merge key with an unknown key", "minurl.yaml", "<<: {idseed: 1}\n", "line 1: " + library("idseed")},
+		{"merge key list with an unknown key", "minurl.yaml", "<<: [{log-format: json}, {idseed: 1}]\n", "line 1: " + library("idseed")},
+		// yaml.v3 skips a null key instead of rejecting it as unknown.
+		{"null key", "minurl.yaml", "http-addr: ':80'\n~: [1, 2]\n", "line 2: " + unknown("~")},
+		{"null word key", "minurl.yaml", "null: 5\n", "line 1: " + unknown("null")},
+		{"uppercase null key", "minurl.yaml", "NULL: {a: 1}\n", "line 1: " + unknown("NULL")},
+		{"list as a key", "minurl.yaml", "? [a, b]\n: 1\n", "line 1: cannot unmarshal !!seq into string"},
+		// yaml.v3 would drop an application's own tag and read the text after it.
+		{"custom tag", "minurl.yaml", "otel-endpoint: !secret collector\n", "line 1: otel-endpoint: tag !secret is not supported"},
+		// A quoted << is a plain key, not a merge key.
+		{"quoted <<", "minurl.yaml", "\"<<\": 1\n", "line 1: " + unknown("<<")},
 		{"mapping value", "minurl.yaml", "db-max-open-conns:\n  foo: 1\n", "line 1: db-max-open-conns takes a single value"},
 		{"list value", "minurl.yaml", "http-addr: [':80']\n", "line 1: http-addr takes a single value"},
-		{"given twice", "minurl.yaml", "id-seed: 1\nid-seed: 2\n", "line 2: id-seed is already set on line 1"},
-		{"uppercase", "minurl.yaml", "HTTP-Addr: ':80'\n", `line 1: unknown key "HTTP-Addr" (keys are lowercase: http-addr)`},
-		// viper folds casings into one key, so a null ID-SEED: would replace the value.
-		{
-			"uppercase null after the key", "minurl.yaml", "id-seed: 1\nID-SEED:\n",
-			`line 2: unknown key "ID-SEED" (keys are lowercase: id-seed)`,
-		},
-		{"uppercase section", "minurl.yaml", "OTEL:\n", `line 1: unknown key "OTEL" (settings are flat keys, such as otel-enabled)`},
+		{"given twice", "minurl.yaml", "id-seed: 1\nid-seed: 2\n", `line 2: mapping key "id-seed" already defined at line 1`},
+		{"uppercase", "minurl.yaml", "HTTP-Addr: ':80'\n", "line 1: " + unknown("HTTP-Addr") + " (keys are lowercase: http-addr)"},
+		// v0.0.2 folded casings into one key, so a null ID-SEED: replaced the value.
+		{"uppercase null after the key", "minurl.yaml", "id-seed: 1\nID-SEED:\n", "line 2: " + unknown("ID-SEED") + " (keys are lowercase: id-seed)"},
+		{"uppercase section", "minurl.yaml", "OTEL:\n", "line 1: " + flat("OTEL", "otel-enabled")},
 		{"JSON", "minurl.json", `{"id-seed": 5}`, "must be YAML (.yaml or .yml)"},
 		{"TOML", "minurl.toml", "id-seed = 5\n", "must be YAML (.yaml or .yml)"},
+		{"not a mapping", "minurl.yaml", "id-seed\n", "line 1: the config file must hold key: value settings"},
+		{"list document", "minurl.yaml", "- id-seed: 1\n", "line 1: the config file must hold key: value settings"},
+		{"alias to a mapping", "minurl.yaml", "http-addr: &m {a: 1}\nlog-format: *m\n", "line 1: http-addr takes a single value"},
+		// An alias key is the key it points at, so it can repeat one, which decoding into a map
+		// does not catch; decoding into the struct does.
+		{"alias key given twice", "minurl.yaml", "&k id-seed: 1\n*k : 2\n", "line 2: field id-seed already set in type main.configFile"},
+		{"alias key to an unknown key", "minurl.yaml", "otel-endpoint: &k idseed\n*k : 2\n", "line 2: " + library("idseed")},
+		{"tag that does not match the value", "minurl.yaml", "otel-service-name: !!int abc\n", "cannot decode !!str `abc` as a !!int"},
+		// Only the first YAML document used to be read, so anything after --- went unchecked.
+		{"second document", "minurl.yaml", "log-format: text\n---\nidseed: 1\n", "line 2: only one YAML document is allowed"},
+		{"syntax error in a second document", "minurl.yaml", "log-format: text\n---\nkey: [unclosed\n", "did not find expected"},
+		{"document after a null one", "minurl.yaml", "log-format: text\n---\n---\nid-seed: 1\n", "line 3: only one YAML document is allowed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -563,7 +676,7 @@ func TestLoadAppConfigRejectsInvalidConfigFileKeys(t *testing.T) {
 				t.Fatalf("write config file: %v", err)
 			}
 
-			_, err := loadAppConfig(newRootCommand(), cfgPath)
+			_, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
 			if err == nil || !strings.Contains(err.Error(), tc.want) {
 				t.Fatalf("loadAppConfig() error = %v, want one containing %q", err, tc.want)
 			}
@@ -620,7 +733,7 @@ db-conn-max-idle-time: 2m
 				t.Fatalf("write config file: %v", err)
 			}
 
-			cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+			cfg, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
 			if err != nil {
 				t.Fatalf("loadAppConfig() error = %v", err)
 			}
@@ -639,6 +752,11 @@ func TestLoadAppConfigIgnoresNullConfigFileKeys(t *testing.T) {
 		"",
 		"http-addr:\ndb-max-open-conns:\notel-enabled:\n",
 		"http-addr: &n\ndb-max-open-conns: *n\n",
+		"~\n",
+		"# comments only\n",
+		"http-addr:\n---\n# a trailing document that holds nothing\n",
+		"---\n---\n",
+		"log-format: !!null ''\n",
 	} {
 		t.Run(content, func(t *testing.T) {
 			t.Parallel()
@@ -648,13 +766,13 @@ func TestLoadAppConfigIgnoresNullConfigFileKeys(t *testing.T) {
 				t.Fatalf("write config file: %v", err)
 			}
 
-			cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+			cfg, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
 			if err != nil {
 				t.Fatalf("loadAppConfig() error = %v", err)
 			}
 
-			if want := defaultAppConfig(); cfg != want {
-				t.Fatalf("loadAppConfig() = %+v, want the defaults %+v", cfg, want)
+			if cfg != defaultConfig {
+				t.Fatalf("loadAppConfig() = %+v, want the defaults %+v", cfg, defaultConfig)
 			}
 		})
 	}
@@ -663,12 +781,14 @@ func TestLoadAppConfigIgnoresNullConfigFileKeys(t *testing.T) {
 func TestLoadAppConfigReadsConfigExample(t *testing.T) {
 	t.Parallel()
 
-	if _, err := loadAppConfig(newRootCommand(), "../../config.example.yaml"); err != nil {
+	if _, err := loadAppConfig(newRootCommand(), "../../config.example.yaml", noEnv); err != nil {
 		t.Fatalf("loadAppConfig(config.example.yaml) error = %v", err)
 	}
 }
 
 func TestLoadAppConfigParsesDurationsStrictly(t *testing.T) {
+	t.Parallel()
+
 	for _, tt := range []struct {
 		name    string
 		value   string
@@ -678,16 +798,18 @@ func TestLoadAppConfigParsesDurationsStrictly(t *testing.T) {
 		{"zero", "0", 0, false},
 		{"surrounding whitespace", " 45s\n", 45 * time.Second, false},
 		// An empty env var is unset, as for every setting, and keeps the default.
-		{"empty", "", defaultAppConfig().DBConnMaxLifetime, false},
+		{"empty", "", 30 * time.Minute, false},
 		// A blank value used to mean 0, no limit; pool sizes and booleans reject it.
-		{"blank", " ", 0, true},
+		{"blank", " \n", 0, true},
 		{"not a duration", "abc", 0, true},
 		{"negative", "-1m", 0, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("MINURL_DB_CONN_MAX_LIFETIME", tt.value)
+			t.Parallel()
 
-			cfg, err := loadAppConfig(newRootCommand(), "")
+			env := envOf(map[string]string{"MINURL_DB_CONN_MAX_LIFETIME": tt.value})
+
+			cfg, err := loadAppConfig(newRootCommand(), "", env)
 			if tt.wantErr {
 				if err == nil || !strings.Contains(err.Error(), "db-conn-max-lifetime") {
 					t.Fatalf("loadAppConfig() error = %v, want one naming db-conn-max-lifetime", err)
@@ -718,7 +840,7 @@ func TestLoadAppConfigReadsBlankDurationFlagAndFile(t *testing.T) {
 			t.Fatalf("set db-conn-max-lifetime flag: %v", err)
 		}
 
-		_, err := loadAppConfig(cmd, "")
+		_, err := loadAppConfig(cmd, "", noEnv)
 		if err == nil || !strings.Contains(err.Error(), `db-conn-max-lifetime: invalid duration ""`) {
 			t.Fatalf("loadAppConfig() error = %v, want an invalid duration error", err)
 		}
@@ -732,7 +854,7 @@ func TestLoadAppConfigReadsBlankDurationFlagAndFile(t *testing.T) {
 			t.Fatalf("write config file: %v", err)
 		}
 
-		_, err := loadAppConfig(newRootCommand(), cfgPath)
+		_, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
 		if err == nil || !strings.Contains(err.Error(), `db-conn-max-idle-time: invalid duration ""`) {
 			t.Fatalf("loadAppConfig() error = %v, want an invalid duration error", err)
 		}
@@ -746,13 +868,189 @@ func TestLoadAppConfigReadsBlankDurationFlagAndFile(t *testing.T) {
 			t.Fatalf("write config file: %v", err)
 		}
 
-		cfg, err := loadAppConfig(newRootCommand(), cfgPath)
+		cfg, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
 		if err != nil {
 			t.Fatalf("loadAppConfig() error = %v", err)
 		}
 
-		if want := defaultAppConfig().DBConnMaxIdleTime; cfg.DBConnMaxIdleTime != want {
+		if want := 10 * time.Minute; cfg.DBConnMaxIdleTime != want {
 			t.Fatalf("DBConnMaxIdleTime = %v, want the default %v", cfg.DBConnMaxIdleTime, want)
 		}
 	})
+}
+
+func TestLoadAppConfigReadsEverySourceAlike(t *testing.T) {
+	t.Parallel()
+
+	// The same text means the same thing as a flag, an env var or in the config file.
+	for _, tt := range []struct {
+		raw     string
+		want    int
+		wantErr bool
+	}{
+		{"010", 8, false},
+		{"0x19", 25, false},
+		{"1_000", 1000, false},
+		{"08", 0, true},
+		{"25.0", 0, true},
+		{"1e3", 0, true},
+	} {
+		t.Run(tt.raw, func(t *testing.T) {
+			t.Parallel()
+
+			cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+			if err := os.WriteFile(cfgPath, []byte("db-max-open-conns: "+tt.raw+"\n"), 0o600); err != nil {
+				t.Fatalf("write config file: %v", err)
+			}
+
+			flagCmd := newRootCommand()
+			flagErr := flagCmd.PersistentFlags().Set("db-max-open-conns", tt.raw)
+
+			sources := map[string]func() (appConfig, error){
+				"flag": func() (appConfig, error) {
+					if flagErr != nil {
+						return appConfig{}, flagErr
+					}
+
+					return loadAppConfig(flagCmd, "", noEnv)
+				},
+				"env": func() (appConfig, error) {
+					env := envOf(map[string]string{"MINURL_DB_MAX_OPEN_CONNS": tt.raw})
+
+					return loadAppConfig(newRootCommand(), "", env)
+				},
+				"file": func() (appConfig, error) { return loadAppConfig(newRootCommand(), cfgPath, noEnv) },
+			}
+
+			for name, load := range sources {
+				cfg, err := load()
+				if (err != nil) != tt.wantErr || cfg.DBMaxOpenConns != tt.want {
+					t.Errorf("%s: DBMaxOpenConns = %d, error = %v, want %d, error %v",
+						name, cfg.DBMaxOpenConns, err, tt.want, tt.wantErr)
+				}
+			}
+		})
+	}
+}
+
+func TestLoadAppConfigReadsConfigFileValuesAsWritten(t *testing.T) {
+	t.Parallel()
+
+	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+	content := "otel-service-name: 010\ndb-max-open-conns: &n 7\ndb-max-idle-conns: *n\n" +
+		"otel-exporter: &k otel-endpoint\n*k : collector:4317\n" +
+		"http-addr: 2001-12-14\nid-seed: !!str 7\n"
+
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	// A string setting keeps its text; YAML would read 010 as the integer 8.
+	if cfg.OTELServiceName != "010" {
+		t.Errorf("OTELServiceName = %q, want %q", cfg.OTELServiceName, "010")
+	}
+
+	// An alias reads the node its anchor points at, as a value or as a key.
+	if cfg.DBMaxOpenConns != 7 || cfg.DBMaxIdleConns != 7 {
+		t.Errorf("DBMaxOpenConns, DBMaxIdleConns = %d, %d, want 7, 7", cfg.DBMaxOpenConns, cfg.DBMaxIdleConns)
+	}
+
+	if cfg.OTELEndpoint != "collector:4317" {
+		t.Errorf("OTELEndpoint = %q, want %q", cfg.OTELEndpoint, "collector:4317")
+	}
+
+	// YAML's own reading of a value, here a timestamp, is not used; !!str asks for the text.
+	if cfg.HTTPAddr != "2001-12-14" || cfg.IDSeed != "7" {
+		t.Errorf("HTTPAddr, IDSeed = %q, %q, want %q, %q", cfg.HTTPAddr, cfg.IDSeed, "2001-12-14", "7")
+	}
+}
+
+func TestLoadAppConfigTreatsEmptyEnvAsUnset(t *testing.T) {
+	t.Parallel()
+
+	// An empty env var keeps the default and does not hide the config file.
+	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+	if err := os.WriteFile(cfgPath, []byte("db-max-idle-conns: 3\n"), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	env := envOf(map[string]string{
+		"MINURL_DB_MAX_OPEN_CONNS": "",
+		"MINURL_DB_MAX_IDLE_CONNS": "",
+		"MINURL_OTEL_INSECURE":     "",
+	})
+
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath, env)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.DBMaxOpenConns != 25 || cfg.DBMaxIdleConns != 3 || !cfg.OTELInsecure {
+		t.Fatalf("DBMaxOpenConns, DBMaxIdleConns, OTELInsecure = %d, %d, %v, want 25, 3, true",
+			cfg.DBMaxOpenConns, cfg.DBMaxIdleConns, cfg.OTELInsecure)
+	}
+}
+
+func TestLoadAppConfigBlankStringSettingsUseTheDefault(t *testing.T) {
+	t.Parallel()
+
+	// Unlike a pool size or a duration, a blank otel-service-name or log-format means its default.
+	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+	if err := os.WriteFile(cfgPath, []byte("otel-service-name: ''\n"), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath, envOf(map[string]string{"MINURL_LOG_FORMAT": " "}))
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.OTELServiceName != defaultConfig.OTELServiceName || cfg.LogFormat != defaultConfig.LogFormat {
+		t.Fatalf("OTELServiceName, LogFormat = %q, %q, want the defaults %q, %q",
+			cfg.OTELServiceName, cfg.LogFormat, defaultConfig.OTELServiceName, defaultConfig.LogFormat)
+	}
+}
+
+func TestConfigFileFieldsAreStrings(t *testing.T) {
+	t.Parallel()
+
+	// configFileValues reads each field with Elem().String(), which does not fail on another type.
+	for field := range reflect.TypeFor[configFile]().Fields() {
+		if field.Type != reflect.TypeFor[*string]() {
+			t.Errorf("configFile.%s is %s, want *string", field.Name, field.Type)
+		}
+	}
+}
+
+func TestLoadAppConfigReadsMergeKeysAndTags(t *testing.T) {
+	t.Parallel()
+
+	// yaml.v3 expands a merge key, a key written out winning, and applies a standard tag, as
+	// v0.0.2 did.
+	cfgPath := filepath.Join(t.TempDir(), "minurl.yaml")
+	content := "log-format: text\n<<: {log-format: json, otel-exporter: otlp}\n" +
+		"otel-service-name: !!binary c3Zj\ndb-max-open-conns: !!int 7\notel-endpoint: !!str collector\n"
+
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config file: %v", err)
+	}
+
+	cfg, err := loadAppConfig(newRootCommand(), cfgPath, noEnv)
+	if err != nil {
+		t.Fatalf("loadAppConfig() error = %v", err)
+	}
+
+	if cfg.LogFormat != "text" || cfg.OTELExporter != "otlp" {
+		t.Errorf("LogFormat, OTELExporter = %q, %q, want text, otlp", cfg.LogFormat, cfg.OTELExporter)
+	}
+
+	if cfg.OTELServiceName != "svc" || cfg.DBMaxOpenConns != 7 || cfg.OTELEndpoint != "collector" {
+		t.Errorf("OTELServiceName, DBMaxOpenConns, OTELEndpoint = %q, %d, %q, want svc, 7, collector",
+			cfg.OTELServiceName, cfg.DBMaxOpenConns, cfg.OTELEndpoint)
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/min0625/minurl/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -56,7 +57,7 @@ func newRootCommand() *cobra.Command {
 				return err
 			}
 
-			cfg, err := loadAppConfig(cmd, opts.configPath)
+			cfg, err := loadAppConfig(cmd, opts.configPath, os.LookupEnv)
 			if err != nil {
 				return err
 			}
@@ -83,14 +84,14 @@ func newRootCommand() *cobra.Command {
 	)
 	cmd.PersistentFlags().String(
 		"storage-dsn",
-		"sqlite3://minurl.sqlite3",
+		defaultSQLiteDSN,
 		"storage DSN: sqlite3://path for SQLite (default), postgres://... for PostgreSQL, or mysql://... for MySQL",
 	)
-	cmd.PersistentFlags().String("log-format", "text", "log output format: text or json")
+	cmd.PersistentFlags().String("log-format", logFormatText, "log output format: text or json")
 	cmd.PersistentFlags().Bool("otel-enabled", false, "enable OpenTelemetry tracing")
 	cmd.PersistentFlags().String("otel-service-name", appName, "OpenTelemetry service name")
 	cmd.PersistentFlags().
-		String("otel-exporter", "stdout", "OpenTelemetry exporter: stdout or otlp")
+		String("otel-exporter", telemetry.ExporterStdout, "OpenTelemetry exporter: stdout or otlp")
 	cmd.PersistentFlags().String("otel-endpoint", "", "OTLP collector endpoint")
 	cmd.PersistentFlags().Bool("otel-insecure", true, "allow insecure OTLP connection")
 	cmd.PersistentFlags().Int(

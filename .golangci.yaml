@@ -109,7 +109,7 @@ linters:
         - module: github.com/mitchellh/mapstructure
           recommendations:
             - github.com/go-viper/mapstructure/v2
-          reason: Archived upstream; go-viper is the maintained fork, already pulled in by viper
+          reason: Archived upstream; go-viper is the maintained fork
         - module: github.com/pkg/errors
           reason: No substantive commit since 2020; stdlib error wrapping (fmt.Errorf, errors.Is/As) covers it
         - module: github.com/satori/go.uuid
