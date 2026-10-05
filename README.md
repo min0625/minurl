@@ -258,15 +258,10 @@ a `defaults: &d {…}` block to merge from fails as an unknown key, and `<<` tak
 fails startup rather than being dropped. The file holds one YAML document: a second one after
 `---` fails startup.
 
-Keys are flat and lowercase, exactly as the flag names. v0.0.2 also read these, which now fail as
-unknown keys, and the error names the key to write (`unknown key "otel" (settings are flat keys,
-such as otel-enabled)`, `unknown key "ID-Seed" (keys are lowercase: id-seed)`):
-
-| v0.0.2 also read | Write instead |
-|---|---|
-| nested `otel:` / `  enabled: true`, `db:` / `  max-open-conns: 25` | `otel-enabled: true`, `db-max-open-conns: 25` |
-| dotted `db.max-open-conns: 25` | `db-max-open-conns: 25` |
-| other casings, such as `OTEL-Service-Name` or `ID-SEED` | `otel-service-name`, `id-seed` |
+Keys are flat and lowercase, exactly as the flag names. A nested (`otel:` / `  enabled: true`),
+dotted (`db.max-open-conns`) or differently cased key is an unknown key, and the error names the
+key to write (`unknown key "otel" (settings are flat keys, such as otel-enabled)`,
+`unknown key "ID-Seed" (keys are lowercase: id-seed)`).
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
