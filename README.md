@@ -232,7 +232,7 @@ Precedence: **CLI flags > environment variables > config file > built-in default
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--config` | — | (none) | Path to a configuration file (applies to all commands) |
+| `--config` | — | (none) | Path to a configuration file; read by the server only, not by `openapi`, `version` or `healthcheck` |
 | `--http-addr` | `MINURL_HTTP_ADDR` | `:8888` | HTTP listen address |
 | `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32, decimal or 0x hex) |
 | `--storage-dsn` | `MINURL_STORAGE_DSN` | `sqlite3://minurl.sqlite3` | Storage DSN — see [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration) |
