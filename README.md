@@ -227,47 +227,14 @@ minurl healthcheck [--addr http://localhost:8888]
 
 ## Configuration
 
-Every option can be set by CLI flag, environment variable, or config file.
+Every option can be set by CLI flag, environment variable, or config file (Cobra + Viper).
 Precedence: **CLI flags > environment variables > config file > built-in defaults**.
-A value that does not parse fails startup rather than falling back to `0` or `false`, so
-`MINURL_DB_MAX_OPEN_CONNS=abc` or `MINURL_OTEL_ENABLED=yes` is an error. Booleans take
-`true` / `false` (or `1` / `0`). Integers (`--id-seed`, `--db-max-*-conns`) accept
-decimal `25`, hex `0x19`, binary `0b11001`, `_` separators (`1_000`), and octal with `0o` or a
-**leading `0`: `010` is 8, not 10**, in a flag, an env var and the config file alike. This is
-the YAML 1.1 and Go reading; YAML 1.2 reads `010` as 10, so write `8` (or `0o10`) if another tool
-reads the same file. `08`, `25.9` and `1e3` are errors. Durations
-(`--db-conn-max-*`) are Go durations such as `30m` or `1h30m`; `0` means no limit. A blank
-duration, pool size or boolean (`''` in the config file, only whitespace in an env var, or
-`--db-conn-max-lifetime=`) is an error; a blank `--id-seed` uses the default seed. An empty env
-var (`MINURL_DB_CONN_MAX_LIFETIME=`) counts as unset. Surrounding whitespace in an env var, such
-as the trailing newline of a Kubernetes Secret, is ignored.
-
-A config file value is read as written, with the same rules as a flag or env var: `08`, `25.0`
-and `1e3` are errors there too, and a string setting written `010` or `2001-12-14` stays as
-written.
-
-The config file must be YAML (`.yaml` or `.yml`). Its keys are the flag names
-without `--`, as in `config.example.yaml` (`db-max-open-conns: 25`), and each takes a single
-value. The file is decoded strictly: an unknown key, a list or mapping as a value, or a key
-given twice fails startup and names the line (`line 3: unknown key "idseed"`), so a typo cannot
-silently leave the default in place. A known key left empty (`db-max-open-conns:`) sets nothing.
-Anchors, aliases, merge keys (`<<`) and standard tags (`!!str`) are read as YAML defines them,
-but every top-level key must still be a setting: an anchor can only sit on a setting's value, so
-a `defaults: &d {…}` block to merge from fails as an unknown key, and `<<` takes inline mappings
-(`<<: {log-format: json}`, or a list of them). A tag of another tool's own (`!secret`, `!env`)
-fails startup rather than being dropped. The file holds one YAML document: a second one after
-`---` fails startup.
-
-Keys are flat and lowercase, exactly as the flag names. A nested (`otel:` / `  enabled: true`),
-dotted (`db.max-open-conns`) or differently cased key is an unknown key, and the error names the
-key to write (`unknown key "otel" (settings are flat keys, such as otel-enabled)`,
-`unknown key "ID-Seed" (keys are lowercase: id-seed)`).
 
 | Flag | Env var | Default | Description |
 |------|---------|---------|-------------|
-| `--config` | — | (none) | Path to a YAML configuration file (`.yaml` or `.yml`); read by the server only, not by `openapi`, `version` or `healthcheck` |
+| `--config` | — | (none) | Path to a configuration file; read by the server only, not by `openapi`, `version` or `healthcheck` |
 | `--http-addr` | `MINURL_HTTP_ADDR` | `:8888` | HTTP listen address |
-| `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32 integer, e.g. `12345` or `0x3039`) |
+| `--id-seed` | `MINURL_ID_SEED` | (built-in default seed) | Deterministic seed for ID key derivation (uint32, decimal or 0x hex) |
 | `--storage-dsn` | `MINURL_STORAGE_DSN` | `sqlite3://minurl.sqlite3` | Storage DSN — see [Storage DSN and SSL configuration](#storage-dsn-and-ssl-configuration) |
 | `--log-format` | `MINURL_LOG_FORMAT` | `text` | Log output format — `text` or `json` |
 | `--otel-enabled` | `MINURL_OTEL_ENABLED` | `false` | Enable OpenTelemetry tracing |
@@ -565,7 +532,8 @@ expiry, and the `404` / `405` / `422` error cases.
 ├── cmd/
 │   ├── minurl/                    # Main entry point and wiring
 │   │   ├── main.go
-│   │   ├── config.go              # Configuration loading
+│   │   ├── config.go              # Configuration loading (Viper)
+│   │   ├── config_bind.go         # Flag/env binding helpers
 │   │   ├── server.go              # HTTP server startup and graceful shutdown
 │   │   ├── service_factory.go     # Storage backend detection and service wiring
 │   │   ├── command_healthcheck.go
