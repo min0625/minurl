@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/min0625/minurl/internal/telemetry"
 	"github.com/spf13/cobra"
 )
 
@@ -57,7 +56,7 @@ func newRootCommand() *cobra.Command {
 				return err
 			}
 
-			cfg, err := loadAppConfig(cmd, opts.configPath, os.LookupEnv)
+			cfg, err := loadAppConfig(cmd, opts.configPath)
 			if err != nil {
 				return err
 			}
@@ -75,34 +74,34 @@ func newRootCommand() *cobra.Command {
 		},
 	}
 
-	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "path to a YAML configuration file (.yaml or .yml)")
+	cmd.PersistentFlags().StringVar(&opts.configPath, "config", "", "path to configuration file")
 	cmd.PersistentFlags().String("http-addr", ":8888", "HTTP listen address")
 	cmd.PersistentFlags().String(
 		"id-seed",
 		"",
-		"seed for deterministic ID key derivation (uint32, e.g. 12345 or 0x3039; a leading 0 is octal: 010 = 8)",
+		"seed for deterministic ID key derivation (uint32, decimal or 0x hex)",
 	)
 	cmd.PersistentFlags().String(
 		"storage-dsn",
-		defaultSQLiteDSN,
+		"sqlite3://minurl.sqlite3",
 		"storage DSN: sqlite3://path for SQLite (default), postgres://... for PostgreSQL, or mysql://... for MySQL",
 	)
-	cmd.PersistentFlags().String("log-format", logFormatText, "log output format: text or json")
+	cmd.PersistentFlags().String("log-format", "text", "log output format: text or json")
 	cmd.PersistentFlags().Bool("otel-enabled", false, "enable OpenTelemetry tracing")
 	cmd.PersistentFlags().String("otel-service-name", appName, "OpenTelemetry service name")
 	cmd.PersistentFlags().
-		String("otel-exporter", telemetry.ExporterStdout, "OpenTelemetry exporter: stdout or otlp")
+		String("otel-exporter", "stdout", "OpenTelemetry exporter: stdout or otlp")
 	cmd.PersistentFlags().String("otel-endpoint", "", "OTLP collector endpoint")
 	cmd.PersistentFlags().Bool("otel-insecure", true, "allow insecure OTLP connection")
 	cmd.PersistentFlags().Int(
 		"db-max-open-conns",
 		25,
-		"max open DB connections, PostgreSQL and MySQL only (0 = unlimited, not recommended; a leading 0 is octal: 010 = 8)",
+		"max open DB connections, PostgreSQL and MySQL only (0 = unlimited, not recommended)",
 	)
 	cmd.PersistentFlags().Int(
 		"db-max-idle-conns",
 		5,
-		"max idle DB connections retained in pool, PostgreSQL and MySQL only (0 = none retained; a leading 0 is octal: 010 = 8)",
+		"max idle DB connections retained in pool, PostgreSQL and MySQL only (0 = none retained)",
 	)
 	cmd.PersistentFlags().String(
 		"db-conn-max-lifetime",
