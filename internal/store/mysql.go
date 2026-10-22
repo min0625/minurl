@@ -157,16 +157,20 @@ func migrateMySQL(cfg *mysqldriver.Config) error {
 // rejected by the server at connect time instead of silently changing how the pool talks
 // to MySQL.
 func parseMySQLDSN(dsn string) (*mysqldriver.Config, error) {
+	// The errors below never print dsn itself, which may hold the password: they print
+	// u.Redacted() instead, or nothing when dsn does not parse.
 	if !strings.HasPrefix(dsn, "mysql://") {
-		return nil, fmt.Errorf("mysql dsn must start with mysql://: %q", dsn)
+		return nil, errors.New("mysql dsn must start with mysql://")
 	}
 
-	// Replace scheme so url.Parse can handle it correctly.
-	raw := "https://" + strings.TrimPrefix(dsn, "mysql://")
-
-	u, err := url.Parse(raw)
+	u, err := url.Parse(dsn)
 	if err != nil {
-		return nil, fmt.Errorf("parse mysql dsn %q: %w", dsn, err)
+		// *url.Error repeats the whole input; keep only the cause.
+		if urlErr, ok := errors.AsType[*url.Error](err); ok {
+			err = urlErr.Err
+		}
+
+		return nil, fmt.Errorf("parse mysql dsn: %w", err)
 	}
 
 	cfg := mysqldriver.NewConfig()
@@ -178,7 +182,7 @@ func parseMySQLDSN(dsn string) (*mysqldriver.Config, error) {
 
 	host := u.Hostname()
 	if host == "" {
-		return nil, fmt.Errorf("mysql dsn missing host: %q", dsn)
+		return nil, fmt.Errorf("mysql dsn missing host: %q", u.Redacted())
 	}
 
 	port := u.Port()
@@ -191,7 +195,7 @@ func parseMySQLDSN(dsn string) (*mysqldriver.Config, error) {
 
 	cfg.DBName = strings.TrimPrefix(u.Path, "/")
 	if cfg.DBName == "" {
-		return nil, fmt.Errorf("mysql dsn missing database name: %q", dsn)
+		return nil, fmt.Errorf("mysql dsn missing database name: %q", u.Redacted())
 	}
 
 	cfg.ParseTime = true

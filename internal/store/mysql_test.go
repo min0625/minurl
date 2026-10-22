@@ -52,9 +52,15 @@ func TestParseMySQLDSN(t *testing.T) {
 		wantErr bool
 		want    mysqlDSNFields
 	}{
+		// Every rejected DSN carrying a password uses s3cret, which the error must not repeat.
 		{ //nolint:gosec // test credentials in DSN
 			name:    "non-mysql scheme is rejected",
-			dsn:     "postgres://user:pass@localhost/db",
+			dsn:     "postgres://user:s3cret@localhost/db",
+			wantErr: true,
+		},
+		{
+			name:    "unparsable DSN is rejected",
+			dsn:     "mysql://user:s3cret@localhost:notaport/dbname",
 			wantErr: true,
 		},
 		{
@@ -62,9 +68,14 @@ func TestParseMySQLDSN(t *testing.T) {
 			dsn:     "mysql:///dbname",
 			wantErr: true,
 		},
+		{
+			name:    "missing host with credentials is rejected",
+			dsn:     "mysql://user:s3cret@:3306/dbname",
+			wantErr: true,
+		},
 		{ //nolint:gosec // test credentials in DSN
 			name:    "missing database is rejected",
-			dsn:     "mysql://user:pass@localhost:3306/",
+			dsn:     "mysql://user:s3cret@localhost:3306/",
 			wantErr: true,
 		},
 		{ //nolint:gosec // test credentials in DSN
@@ -99,6 +110,10 @@ func TestParseMySQLDSN(t *testing.T) {
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("parseMySQLDSN(%q) error = nil, want non-nil", tc.dsn)
+				}
+
+				if strings.Contains(err.Error(), "s3cret") {
+					t.Fatalf("parseMySQLDSN() error = %q, want the password left out", err)
 				}
 
 				return
