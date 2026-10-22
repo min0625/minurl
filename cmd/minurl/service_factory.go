@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/url"
@@ -35,9 +36,13 @@ func detectStorageBackend(dsn string) (string, error) {
 	case strings.HasPrefix(dsn, "mysql://"):
 		return backendMySQL, nil
 	default:
-		scheme := dsn
-		if before, _, ok := strings.Cut(dsn, "://"); ok {
-			scheme = before
+		// Without "://" there is no scheme to name, and the DSN itself may hold a
+		// password (user:pass@tcp(host)/db, host=… password=…), so it is not printed.
+		scheme, _, ok := strings.Cut(dsn, "://")
+		if !ok {
+			return "", errors.New(
+				"storage DSN has no scheme: use sqlite3://, postgres://, or mysql://",
+			)
 		}
 
 		return "", fmt.Errorf(

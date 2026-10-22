@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/min0625/minurl/internal/service"
@@ -328,6 +329,25 @@ func TestLoadAppConfigRejectsInvalidStorageBackend(t *testing.T) {
 
 	if _, err := loadAppConfig(cmd, ""); err == nil {
 		t.Fatal("loadAppConfig() error = nil, want non-nil for unknown DSN scheme")
+	}
+}
+
+func TestDetectStorageBackendKeepsThePasswordOutOfErrors(t *testing.T) {
+	t.Parallel()
+
+	for _, dsn := range []string{
+		"u:s3cret@tcp(h:3306)/db",                 // go-sql-driver's own DSN format
+		"host=h user=u password=s3cret dbname=db", // PostgreSQL keyword/value format
+		"mysql:/u:s3cret@h/db",                    // one slash short
+	} {
+		_, err := detectStorageBackend(dsn)
+		if err == nil {
+			t.Fatalf("detectStorageBackend(%q) error = nil, want non-nil", dsn)
+		}
+
+		if strings.Contains(err.Error(), "s3cret") {
+			t.Fatalf("detectStorageBackend() error = %q, want the password left out", err)
+		}
 	}
 }
 
